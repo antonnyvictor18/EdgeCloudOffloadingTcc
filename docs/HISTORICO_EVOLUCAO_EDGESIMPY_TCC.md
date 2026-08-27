@@ -618,6 +618,78 @@ No step 1 havia 3 flows de layer, 2 ativos e 1 finalizado; no step 7 havia 4 flo
 | Service disponivel? | `Service._available` |
 | Provisionamento em andamento? | `Service.being_provisioned` |
 | Inicio/fim de flow | `NetworkFlow.start`, `NetworkFlow.end` |
+
+## 15. Nona fase: abstracao explicita de Task
+
+**Objetivo:** criar a entidade de dominio que representa uma unidade de trabalho
+computacional do TCC, sem integra-la ao `Simulator`, sem criar `NetworkFlow`,
+sem implementar offloading, Cloud ou ML.
+
+**Fontes consultadas:**
+
+- [Dataset/OffloadingSample.cs](../Dataset/OffloadingSample.cs), como referencia dos requisitos e features do sistema C#;
+- implementacoes locais de `User`, `Service`, `EdgeServer` e `NetworkFlow` do EdgeSimPy 1.1.0;
+- [diagnostico_infraestrutura.py](../edgesimpy-simulation/src/diagnostico_infraestrutura.py) e as politicas de placement existentes;
+- skill de metodologia do TCC e instrucoes Python do repositorio.
+
+**Arquivos criados ou consolidados:**
+
+- [models/task.py](../edgesimpy-simulation/src/models/task.py): dataclass `Task` independente do EdgeSimPy;
+- [models/task_status.py](../edgesimpy-simulation/src/models/task_status.py): enum `TaskStatus`;
+- [test_task.py](../edgesimpy-simulation/src/test_task.py): smoke test de construcao e estado inicial;
+- [models/__init__.py](../edgesimpy-simulation/src/models/__init__.py): exportacao de `Task` e `TaskStatus`.
+
+**Decisoes de modelagem:**
+
+1. Os atributos `cpu_cycles`, `data_size_mb`, `deadline_ms`,
+   `latency_sensitivity` e `required_memory_mb` vieram diretamente de
+   `OffloadingSample` e representam requisitos da tarefa.
+2. `task_id`, referencias a `user`, `application` e `service`,
+   `creation_time_s` e os timestamps do ciclo sao novos atributos necessarios
+   para uma simulacao temporal.
+3. Os tempos internos da futura Task usam segundos (`*_time_s`), enquanto os
+   requisitos preservam as unidades do C#: ciclos, MB e deadline em
+   milissegundos. A conversao do deadline para segundos ocorre na propriedade
+   `deadline_time_s`.
+4. `selected_server`, `completion_time_s` e `deadline_violation` pertencem ao
+   resultado da tarefa. As propriedades de duracao calculam fila,
+   transmissao, execucao e resposta somente quando os timestamps necessarios
+   existem.
+5. `EdgeCpuUsagePercent`, `EdgeMemoryUsagePercent`, filas, bandwidth,
+   latencia e utilizacao da Cloud continuam sendo estado do ambiente, nao
+   atributos da Task. `ExecutionTime*`, `TotalResponseTime*` e
+   `BestDestination` continuam sendo resultados/rotulo do simulador analitico
+   C#.
+6. `TaskStatus` registra o ciclo `created`, `queued`, `transmitting`,
+   `executing`, `completed`, `failed` e `cancelled`.
+
+**Validacao executada:**
+
+```powershell
+cd edgesimpy-simulation
+.venv\\Scripts\\python.exe src\\test_task.py
+```
+
+O teste cria uma Task com identificador, confirma `CREATED`, tempo de criacao
+zero, servidor e conclusao ausentes e imprime o estado inicial. Nenhuma classe
+ou dataset do EdgeSimPy e carregado.
+
+**Itens deliberadamente adiados:**
+
+- registro e agendamento de Tasks no `Simulator`;
+- criacao de `NetworkFlow` para dados da tarefa;
+- decisao Edge/Cloud e selecao de servidor;
+- entidade Cloud;
+- integracao CSV/JSON com o C#;
+- MLP, WiSARD e qualquer treinamento;
+- medicao real de fila, transmissao e execucao no ambiente.
+
+**Proxima integracao prevista:** a Task devera ser criada por uma camada de
+adaptacao quando uma requisicao do `User` for observada. Ela sera associada a
+`Application`/`Service`, recebera um snapshot observavel do ambiente para a
+politica de offloading e, somente depois da decisao, podera ser conectada ao
+ciclo de rede e execucao. A avaliacao devera usar metricas do ambiente, nao
+apenas a classificacao produzida pela politica.
 | Tipo de transferencia | `NetworkFlow.metadata["type"]` |
 | Caminho | `NetworkFlow.path` |
 | Dados restantes | `NetworkFlow.data_to_transfer` |
@@ -662,6 +734,104 @@ Ainda nao concluido:
 - decisao sobre a representacao de Cloud.
 
 O próximo checkpoint recomendado é reexecutar as baselines com cenários controlados de maior carga e, depois, definir a representação de Task antes de integrar políticas de offloading, Cloud ou ML.
+
+## 16. Decima fase: prototipo minimo de execucao de Task
+
+**Objetivo:** validar o ciclo temporal local de uma unica Task, sem integrar a
+Task ao `Simulator` e sem criar `NetworkFlow`, Cloud, offloading ou ML.
+
+**Verificacao da capacidade de CPU:**
+
+No EdgeSimPy 1.1.0, `EdgeServer.cpu` representa capacidade de hospedagem e
+`cpu_demand` representa consumo reservado por Services/registries. O metodo
+`has_capacity_to_host()` compara esses valores com demandas de hospedagem; o
+codigo local nao define ciclos por segundo nem uma taxa de processamento de
+Tasks. Portanto, nao foi usada uma divisao silenciosa entre `Task.cpu_cycles` e
+`EdgeServer.cpu`.
+
+**Hipotese explicita do prototipo:**
+
+`TaskExecutionConfig.processing_rate_cycles_per_second` define uma taxa
+independente, em ciclos por segundo. Essa taxa e uma hipotese experimental
+provisoria, nao uma propriedade inferida do EdgeSimPy. O executor usa:
+
+```text
+execution_time_s = cpu_cycles / processing_rate_cycles_per_second
+```
+
+O `EdgeServer` recebido e registrado como servidor escolhido, mas seus campos
+de capacidade, demanda e disponibilidade nao sao modificados.
+
+**Arquivos criados:**
+
+- [execution/task_execution.py](../edgesimpy-simulation/src/execution/task_execution.py): `TaskExecutionConfig` e `TaskExecutor`;
+- [execution/__init__.py](../edgesimpy-simulation/src/execution/__init__.py): exportacao do executor;
+- [diagnostico_task_execution.py](../edgesimpy-simulation/src/diagnostico_task_execution.py): diagnostico deterministico.
+
+**Ciclo implementado:**
+
+```text
+CREATED -> QUEUED -> EXECUTING -> COMPLETED
+```
+
+O instante recebido pelo executor e usado como instante da decisao e entrada na
+fila. Como nao existe outra Task nem contention, `queue_enter_time_s` e
+`queue_start_time_s` coincidem. Tambem coincidem `queue_start_time_s` e
+`execution_start_time_s`, pois nao ha espera adicional entre fila e CPU.
+
+**Experimento executado:**
+
+- dataset carregado: `sample_dataset2.json`;
+- servidor selecionado explicitamente: `EdgeServer_3`;
+- Task: `task-001`;
+- `creation_time_s = 10.0`;
+- `cpu_cycles = 600000000`;
+- taxa hipotetica: `300000000 cycles/s`;
+- `deadline_ms = 1500`, equivalente a deadline absoluto de `11.5s`;
+- nenhum `Simulator.run_model()` foi chamado;
+- nenhum `NetworkFlow` foi criado.
+
+Comando:
+
+```powershell
+.\\.venv\\Scripts\\python.exe .\\edgesimpy-simulation\\src\\diagnostico_task_execution.py
+```
+
+Resultado:
+
+```text
+Status: completed
+Server: EdgeServer_3
+Creation: 10.0s
+Queue Start: 10.0s
+Execution Start: 10.0s
+Execution End: 12.0s
+Completion: 12.0s
+Queue Time: 0.0s
+Execution Time: 2.0s
+Response Time: 2.0s
+Deadline: 11.5s
+Deadline Violation: True
+```
+
+**Interpretacao:**
+
+1. A fila foi zero por ausencia intencional de concorrencia.
+2. A execucao levou dois segundos segundo a taxa configurada.
+3. A resposta terminou em `12.0s`, depois do deadline absoluto `11.5s`; por
+   isso a violacao foi `True`.
+4. O resultado demonstra o ciclo e as metricas da Task, mas nao representa
+   ainda desempenho real de CPU, rede ou EdgeSimPy.
+
+**Decisoes adiadas:**
+
+- derivar uma taxa real a partir de `EdgeServer.cpu`;
+- modelar filas com multiplas Tasks;
+- associar Task a um `NetworkFlow`;
+- medir upload, download ou latencia de retorno;
+- integrar o executor ao scheduler do EdgeSimPy;
+- definir preempcao, concorrencia e politica de falha/cancelamento;
+- implementar offloading, Cloud, MLP ou WiSARD.
 
 ## 17. Fontes
 
