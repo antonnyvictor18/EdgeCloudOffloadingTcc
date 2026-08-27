@@ -443,7 +443,171 @@ Arquivos criados:
 
 A política LatencyAwarePlacement atendeu perfeitamente os SLAs mas demonstrou limitações em balanceamento de carga e utilização eficiente de recursos. Isso sugere a necessidade de políticas multi-objetivo que considerem latência, capacidade e balanceamento simultaneamente.
 
-## 11. Mapa de observabilidade
+## 11. Sexto experimento: ResourceAwarePlacement
+
+Arquivos criados:
+- [policies/resource_aware_placement.py](../edgesimpy-simulation/src/policies/resource_aware_placement.py)
+- [diagnostico_resource_aware.py](../edgesimpy-simulation/src/diagnostico_resource_aware.py)
+
+**Objetivo:** Implementar uma segunda baseline determinística de placement, mantendo a decisão separada de ML, WiSARD, MLP, Cloud, Task personalizada e execução de requisições.
+
+**Critério lexicográfico:**
+
+1. O EdgeServer precisa ter capacidade suficiente para hospedar o Service.
+2. O caminho precisa existir e seu delay precisa atender ao SLA do User (`delay <= SLA`).
+3. Entre os candidatos válidos, vence o menor delay de rede.
+4. Em empate de delay, vence o maior CPU disponível.
+5. Persistindo o empate, vence a maior RAM disponível.
+6. Persistindo o empate, vence o menor ID do EdgeServer.
+
+Os recursos disponíveis são calculados como `capacity - demand`. A verificação de capacidade usa o método nativo `EdgeServer.has_capacity_to_host(service=service)`, que verifica CPU, memória e o espaço adicional de disco necessário para a imagem do Service. O cálculo de rede reutiliza o mesmo helper da política anterior: `nx.shortest_path()` com `weight="delay"` e `method="dijkstra"`, seguido de `Topology.calculate_path_delay()`; hops é `len(path) - 1`.
+
+**Relacionamentos usados:**
+
+```text
+Service.application -> Application.users[0]
+User.base_station.network_switch
+EdgeServer.base_station.network_switch
+```
+
+**Condição do dataset:** `sample_dataset2.json` possui relações `Service -> EdgeServer` predefinidas. Como placement só atua em Services sem servidor, o diagnóstico remove esses placements apenas na memória depois do `initialize()`, subtrai as demandas CPU/RAM e marca os Services como indisponíveis. O JSON não é modificado.
+
+**Comando executado:**
+
+```powershell
+.\.venv\Scripts\python.exe edgesimpy-simulation\src\diagnostico_resource_aware.py
+```
+
+O diagnóstico registra User, SLA, candidatos válidos, delay, hops, CPU/RAM disponíveis, empates, critério de desempate, servidor escolhido, local/offload e provisioning time. Também executa a LatencyAwarePlacement em uma nova simulação para comparação.
+
+**Empates observados:**
+
+- Service 2: todos os candidatos tinham delay de 10ms; EdgeServer_6 venceu por possuir mais CPU disponível.
+- Service 3: EdgeServer_2 e EdgeServer_4 tinham delay de 5ms e CPU disponível igual; EdgeServer_2 venceu por possuir mais RAM disponível.
+
+**Tabela final do ResourceAwarePlacement:**
+
+| User | Service | SLA | Edge escolhido | Local/Offload | Hops | Delay | CPU disp | RAM disp | Provisionamento |
+|------|---------|-----|----------------|---------------|------|-------|----------|----------|-----------------|
+| User_1 | Service_1 | 45ms | Edge_3 | LOCAL | 0 | 0ms | 6 | 4096 | 1s |
+| User_2 | Service_2 | 45ms | Edge_6 | OFFLOAD | 2 | 10ms | 10 | 12288 | 1s |
+| User_3 | Service_3 | 25ms | Edge_2 | OFFLOAD | 1 | 5ms | 7 | 14336 | 5s |
+| User_4 | Service_4 | 25ms | Edge_3 | LOCAL | 0 | 0ms | 6 | 4096 | 5s |
+| User_5 | Service_5 | 25ms | Edge_6 | OFFLOAD | 1 | 5ms | 10 | 12288 | 0s |
+| User_6 | Service_6 | 25ms | Edge_4 | OFFLOAD | 1 | 5ms | 7 | 6144 | 0s |
+
+**Resumo medido:**
+
+- 6 Services provisionados;
+- 2 acessos locais e 4 offloads;
+- 6/6 Services atendem ao SLA;
+- provisioning médio de 2.00s.
+
+**Comparação com LatencyAwarePlacement:**
+
+- Services 1, 3, 4, 5 e 6 permaneceram nos mesmos servidores.
+- Service 2 mudou de EdgeServer_1 para EdgeServer_6.
+- A mudança ocorreu porque o delay era igual para os candidatos e o ResourceAwarePlacement aplicou o primeiro desempate, maior CPU disponível.
+
+O resultado confirma que a nova baseline resolve os empates de forma explícita e reproduzível, sem alterar a prioridade principal de latência nem introduzir conceitos ainda adiados do TCC.
+
+## 12. Sétimo experimento: execução isolada das políticas
+
+**Motivação metodológica:** A comparação anterior executava ResourceAware e LatencyAware no mesmo processo Python e chamava `reset_dataset_placements()` entre as simulações. Embora isso permitisse limpar o placement em memória, a abordagem compartilhava o interpretador e o estado global do EdgeSimPy. Isso podia afetar listas de instâncias, contadores, referência ao modelo e objetos registrados no scheduler, tornando a comparação menos segura.
+
+No EdgeSimPy 1.1.0 foram confirmados os seguintes pontos de estado:
+
+- cada componente mantém `_instances` e `_object_count` como atributos de classe;
+- `ComponentManager` mantém uma referência privada global ao modelo atual;
+- `Simulator` registra a instância do simulador e mantém `topology`, `schedule`, parâmetros e algoritmos;
+- `Simulator.initialize()` limpa as listas e contadores das subclasses de componentes, mas isso ocorre dentro do mesmo interpretador;
+- o scheduler, os agentes, os flows, as filas de download e as demandas dos EdgeServers pertencem à execução corrente.
+
+Por isso, o isolamento por processo é metodologicamente mais seguro: cada política inicia um interpretador novo, importa novamente o EdgeSimPy, cria um novo `Simulator`, carrega novamente o dataset e termina antes da próxima política ser iniciada. Não há chamada a `reset_dataset_placements()` para reutilizar uma instância.
+
+**Arquivos criados:**
+
+- [executar_politica_isolada.py](../edgesimpy-simulation/src/executar_politica_isolada.py): executa uma única política e grava um JSON.
+- [comparar_politicas_isoladas.py](../edgesimpy-simulation/src/comparar_politicas_isoladas.py): inicia três subprocessos independentes e compara os JSONs.
+
+O dataset é lido novamente em cada subprocesso. Como `sample_dataset2.json` contém placements iniciais serializados, o runner cria uma cópia Python em memória, remove as relações `Service.server` dessa cópia antes de `Simulator.initialize()` e marca os Services como indisponíveis. O arquivo original não é alterado.
+
+Cada resultado contém experiment ID, cenário, política, seed, configuração de tick, número de passos, total de NetworkFlows e, por Service, servidor, delay, hops, SLA, CPU/RAM disponíveis, LOCAL/OFFLOAD e tempo de provisioning. Como as políticas atuais são determinísticas, `seed` foi registrado como `null`.
+
+**Comando executado:**
+
+```powershell
+.\.venv\Scripts\python.exe edgesimpy-simulation\src\comparar_politicas_isoladas.py
+```
+
+**Resultados isolados:**
+
+| Política | Steps | Flows | Servidores dos Services 1-6 | Provisioning dos Services 1-6 |
+|----------|-------|-------|-----------------------------|-------------------------------|
+| FirstFit | 8 | 4 | 1, 1, 1, 1, 1, 1 | 1s, 1s, 7s, 7s, 7s, 7s |
+| LatencyAware | 6 | 6 | 3, 1, 2, 3, 6, 4 | 1s, 1s, 5s, 5s, 0s, 0s |
+| ResourceAware | 6 | 6 | 3, 6, 2, 3, 6, 4 | 1s, 1s, 5s, 5s, 0s, 0s |
+
+**Verificação específica dos Services 5 e 6:** Os tempos continuam em `0s` nas execuções isoladas de LatencyAware e ResourceAware. Isso ocorre porque ambos utilizam EdgeServers e imagens que, nessa execução, permitem que seus processos de provisionamento terminem antes do encerramento; não é efeito de estado compartilhado entre políticas. No FirstFit, a concentração de seis Services no EdgeServer_1 cria contention de downloads e os Services 5 e 6 terminam em `7s`.
+
+**Comparação de servidores:**
+
+- FirstFit vs LatencyAware: Services 1, 3, 4, 5 e 6 mudaram, pois FirstFit sempre escolheu o primeiro EdgeServer com capacidade.
+- ResourceAware vs LatencyAware: somente o Service 2 mudou, de EdgeServer_1 para EdgeServer_6, pelo desempate de CPU em delay igual.
+
+Os JSONs gerados ficam em `edgesimpy-simulation/results/isolated_sample_dataset2/`, um arquivo por política. A execução não implementa Task, Cloud, ML, WiSARD ou requisições personalizadas.
+
+## 13. Oitavo experimento: auditoria do ciclo de provisionamento
+
+**Objetivo:** verificar, no EdgeSimPy 1.1.0, a sequência exata de placement, transferência de camadas, finalização de flows, atualização da migration e disponibilidade do Service.
+
+Arquivo criado: [diagnostico_ciclo_provisionamento.py](../edgesimpy-simulation/src/diagnostico_ciclo_provisionamento.py).
+
+O diagnóstico usa o `sample_dataset2.json` em uma cópia em memória, remove placements e demandas previamente serializados e executa somente FirstFit. O stopping criterion exige simultaneamente `service.server != None`, `service.being_provisioned == False` e `service._available == True` para todos os Services. Atributo `available` no relatório é o campo real `Service._available`; `Service.collect()` o expõe como `Available`.
+
+**Ciclo confirmado no código:**
+
+1. `Simulator.run_model()` monitora o estado inicial, executa `Simulator.step()` e só então avalia o stopping criterion.
+2. `Simulator.step()` chama a política de recursos antes do scheduler.
+3. `Service.provision()` adiciona a migration com `status="waiting"`, `start=schedule.steps+1`, `end=None`, marca `being_provisioned=True` e reserva CPU/RAM no target. Para placement inicial, `service.server` ainda permanece `None`.
+4. `EdgeServer.step()` retira camadas da waiting queue e cria `NetworkFlow` do tipo `layer` para as camadas ausentes.
+5. `NetworkFlow.step()` reduz `data_to_transfer`; quando chega a zero, define `end=schedule.steps+1`, muda o status para `finished`, remove o flow das filas, instala a camada no target e libera os links.
+6. `Service.step()` observa as camadas instaladas. Quando todas estão presentes, uma migration stateless muda para `finished`; nesse mesmo bloco define `migration.end=schedule.steps+1`, atribui `service.server`, adiciona o Service ao host, marca `_available=True` e `being_provisioned=False`.
+7. Como o scheduler efetivo ativa Services antes de NetworkFlows, um flow que termina no step N pode ser reconhecido pelo Service somente no step N+1. Por isso flows podem estar todos finalizados no step 7 e Services só se tornarem disponíveis no step 8.
+
+**Comando executado:**
+
+```powershell
+.\.venv\Scripts\python.exe edgesimpy-simulation\src\diagnostico_ciclo_provisionamento.py
+```
+
+**Saída resumida da auditoria FirstFit:**
+
+| Service | start | first_server | available_at | end | duration | waiting | pulling | state_migration |
+|---------|------:|-------------:|-------------:|----:|---------:|--------:|--------:|-----------------:|
+| 1 | 1 | 1 | 2 | 2 | 1s | 0 | 1 | 0 |
+| 2 | 1 | 1 | 2 | 2 | 1s | 0 | 1 | 0 |
+| 3 | 1 | 1 | 8 | 8 | 7s | 0 | 7 | 0 |
+| 4 | 1 | 1 | 8 | 8 | 7s | 0 | 7 | 0 |
+| 5 | 1 | 1 | 8 | 8 | 7s | 1 | 6 | 0 |
+| 6 | 1 | 1 | 8 | 8 | 7s | 1 | 6 | 0 |
+
+No step 1 havia 3 flows de layer, 2 ativos e 1 finalizado; no step 7 havia 4 flows finalizados, mas Services 3–6 ainda estavam em `pulling_layers`; no step 8 todos estavam `server=1`, `available=True`, `being_provisioned=False`, com migration `finished`. O experimento terminou em 8 steps e 4 flows.
+
+**Causas dos resultados suspeitos:**
+
+- `LatencyAware` e `ResourceAware` terminam em 6 steps porque seus placements levam os Services para hosts em que as camadas necessárias são obtidas mais rapidamente, e o stopping criterion correto encerra somente depois da disponibilidade. ResourceAware escolhe EdgeServer_5 quando EdgeServer_5 e EdgeServer_6 empatam completamente, pois o último desempate é menor ID.
+- Services 5 e 6 aparecem com `0s` quando `migration.start=1` e `migration.end=1`. Isso significa que todas as camadas necessárias já estavam disponíveis no host escolhido e a migration stateless foi concluída no mesmo tick; é duração válida, não valor ausente nem estado compartilhado.
+- FirstFit termina em 8 steps porque concentra todos os Services no EdgeServer_1. A contention dos downloads faz Services 3–6 aguardarem/puxarem até o step 7; o Service só fecha a migration no step 8.
+- FirstFit cria 4 flows porque os seis Services compartilham imagens/camadas e o EdgeServer_1 reutiliza camadas já transferidas. Latency/Resource criam 6 flows porque seus hosts-alvo e caches de camadas são diferentes; o número de flows é consequência do placement e do cache, não uma propriedade fixa da política.
+
+**Revisão da medição anterior:** ao corrigir o runner para zerar também `cpu_demand`, `memory_demand`, `disk_demand` e a relação `EdgeServer.services` na cópia em memória, ResourceAware passou de EdgeServer_6 para EdgeServer_5 no Service 2 e de 6 para 5 flows totais. A medição anterior preservava demandas serializadas dos placements originais, deixando EdgeServer_5 artificialmente com menos CPU disponível; isso favorecia EdgeServer_6 e não representava um estado inicial de placement limpo. Com a preparação corrigida, EdgeServer_5 e EdgeServer_6 empatam em CPU e RAM, e o ID menor seleciona EdgeServer_5. LatencyAware permanece em 6 flows; FirstFit permanece em 4.
+
+**Definição correta de provisioning time:** para um Service provisionado, a métrica é `migration.end - migration.start`, em segundos de simulação quando `tick_duration=1` e `tick_unit="seconds"`. `0s` é correto para `start=end`. Se não existir migration ou ela ainda não tiver `end`, o valor correto é `null`/indisponível, não zero. Os coletores em [executar_politica_isolada.py](../edgesimpy-simulation/src/executar_politica_isolada.py), [diagnostico_latency_aware.py](../edgesimpy-simulation/src/diagnostico_latency_aware.py) e [diagnostico_resource_aware.py](../edgesimpy-simulation/src/diagnostico_resource_aware.py) foram ajustados para essa distinção.
+
+**Critério de parada:** `service.server != None` sozinho é prematuro, pois `Service.provision()` inicia o processo antes de `Service.step()` atribuir o servidor. O critério auditado exige servidor atribuído, `being_provisioned=False` e `_available=True` para todos.
+
+## 14. Mapa de observabilidade
 
 | Pergunta | Atributo/metodo real |
 |---|---|
@@ -462,7 +626,7 @@ A política LatencyAwarePlacement atendeu perfeitamente os SLAs mas demonstrou l
 | Demanda do link | `NetworkLink.bandwidth_demand` |
 | Logs por passo | `Simulator.agent_metrics`, `agent.collect()` |
 
-## 12. Decisoes metodologicas
+## 15. Decisoes metodologicas
 
 - Nao substituir o C# pelo EdgeSimPy.
 - Nao confundir placement de Service com offloading de Task.
@@ -472,7 +636,7 @@ A política LatencyAwarePlacement atendeu perfeitamente os SLAs mas demonstrou l
 - Registrar versao, commit, dataset, configuracao, politica, seed, unidades e artefatos.
 - Considerar como limitacao a circularidade de treinar ML nos labels produzidos pelo mesmo simulador analitico usado na avaliacao.
 
-## 13. Estado atual e proximo passo
+## 16. Estado atual e proximo passo
 
 Concluido:
 
@@ -485,6 +649,9 @@ Concluido:
 - diagnostico detalhado da infraestrutura e relacionamentos;
 - calculo de distancias de rede entre Users e EdgeServers;
 - primeira política deterministica (LatencyAwarePlacement).
+- segunda política deterministica (ResourceAwarePlacement), com desempates por CPU, RAM e ID.
+- execução isolada das baselines FirstFit, LatencyAware e ResourceAware, com resultados JSON por política.
+- auditoria temporal do ciclo de provisionamento, flows, migration e critério de parada.
 
 Ainda nao concluido:
 
@@ -494,9 +661,9 @@ Ainda nao concluido:
 - ML integrado ao EdgeSimPy;
 - decisao sobre a representacao de Cloud.
 
-O proximo checkpoint recomendado e implementar politicas multi-objetivo que considerem latencia, capacidade e balanceamento de carga simultaneamente, abordando as limitacoes identificadas no LatencyAwarePlacement.
+O próximo checkpoint recomendado é reexecutar as baselines com cenários controlados de maior carga e, depois, definir a representação de Task antes de integrar políticas de offloading, Cloud ou ML.
 
-## 14. Fontes
+## 17. Fontes
 
 - Codigo local: `edgesimpy-simulation/edgesimpy-source/edge_sim_py`.
 - Tutorials locais: `edgesimpy-simulation/tutorials`.
@@ -506,6 +673,11 @@ O proximo checkpoint recomendado e implementar politicas multi-objetivo que cons
 - [diagnostico_segundo_experimento.py](../edgesimpy-simulation/src/diagnostico_segundo_experimento.py).
 - [diagnostico_infraestrutura.py](../edgesimpy-simulation/src/diagnostico_infraestrutura.py).
 - [diagnostico_distancia_users_edges.py](../edgesimpy-simulation/src/diagnostico_distancia_users_edges.py).
+- [diagnostico_resource_aware.py](../edgesimpy-simulation/src/diagnostico_resource_aware.py).
+- [resource_aware_placement.py](../edgesimpy-simulation/src/policies/resource_aware_placement.py).
+- [executar_politica_isolada.py](../edgesimpy-simulation/src/executar_politica_isolada.py).
+- [comparar_politicas_isoladas.py](../edgesimpy-simulation/src/comparar_politicas_isoladas.py).
+- [diagnostico_ciclo_provisionamento.py](../edgesimpy-simulation/src/diagnostico_ciclo_provisionamento.py).
 - [monitoring-simulation.ipynb](../edgesimpy-simulation/tutorials/notebooks/monitoring-simulation.ipynb).
 - [creating-placement-algorithm.ipynb](../edgesimpy-simulation/tutorials/notebooks/creating-placement-algorithm.ipynb).
 - Conversa compartilhada: <https://chatgpt.com/share/6a8fa202-5fbc-83e9-befb-2b85352d448b>.

@@ -77,12 +77,10 @@ def collect_results():
         
         # Tempo de provisionamento
         metrics = service.collect()
-        last_migration = metrics.get("Last Migration", {})
-        provisioning_time = 0
-        if last_migration:
-            start = last_migration.get("start", 0)
-            end = last_migration.get("end", 0)
-            provisioning_time = end - start
+        last_migration = metrics.get("Last Migration")
+        provisioning_time = None
+        if last_migration is not None and last_migration["end"] is not None:
+            provisioning_time = last_migration["end"] - last_migration["start"]
         
         # NetworkFlows
         total_flows = NetworkFlow.count()
