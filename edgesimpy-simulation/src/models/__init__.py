@@ -2,5 +2,6 @@
 
 from .task import Task
 from .task_status import TaskStatus
+from .task_execution import TaskExecution
 
-__all__ = ["Task", "TaskStatus"]
+__all__ = ["Task", "TaskStatus", "TaskExecution"]

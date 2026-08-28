@@ -890,3 +890,438 @@ Deadline Violation: True
 - Skills em `.github/skills/` funcionam corretamente com comandos `/nome`
 - A complexidade de consolidacao nao trouxe beneficios significativos
 - Melhorias contextuais tornam as skills mais uteis para o projeto especifico
+
+## 19. Decima fase: definicoes temporais da Task (28/08/2026)
+
+**Objetivo:** definir o ciclo temporal minimo de execucao da Task, sem ainda integrar NetworkFlow, Cloud, ML ou offloading real.
+
+**Contexto:** A classe `src/models/task.py` ja foi criada e validada como modelo de dominio independente do EdgeSimPy. Foi realizada uma analise metodologica para definir:
+
+1. Definicao operacional dos timestamps;
+2. Definicao das duracoes calculadas;
+3. Transformacao de CpuCycles em tempo de execucao;
+4. Unidade do relogio da Task;
+5. Avaliacao de deadline violation;
+6. Decisoes que nao devem ser tomadas nesta fase.
+
+**Definicoes operacionais dos timestamps:**
+
+| Timestamp | Definicao operacional |
+|-----------|----------------------|
+| `creation_time_s` | Instante em que a Task e criada (momento zero do ciclo) |
+| `decision_time_s` | Instante em que a politica de offloading escolhe o servidor alvo |
+| `queue_enter_time_s` | Instante em que a Task entra na fila do servidor escolhido |
+| `queue_start_time_s` | Instante em que a Task comeca a ser atendida na fila (sai da espera) |
+| `execution_start_time_s` | Instante em que a CPU comeca a processar a Task |
+| `execution_end_time_s` | Instante em que a CPU termina de processar a Task |
+| `completion_time_s` | Instante final da Task (deve incluir fila + transmissao + execucao) |
+
+**Nota metodologica:** Na Fase 10, sem NetworkFlow, `transmission_start_time_s` e `transmission_end_time_s` permanecem `None`, e `completion_time_s` = `execution_end_time_s`.
+
+**Definicoes das duracoes calculadas:**
+
+| Duração | Fórmula | Observação |
+|---------|---------|------------|
+| `queue_time_s` | `queue_start_time_s - queue_enter_time_s` | Retorna `None` se timestamps incompletos |
+| `execution_time_s` | `execution_end_time_s - execution_start_time_s` | Retorna `None` se timestamps incompletos |
+| `response_time_s` | `completion_time_s - creation_time_s` | Métrica primária do TCC |
+
+**Nota metodologica:** `transmission_time_s` permanecera `None` nesta fase, pois NetworkFlow ainda nao foi integrado.
+
+**Transformacao de CpuCycles em tempo de execucao:**
+
+**Fato:** EdgeSimPy 1.1.0 usa `EdgeServer.cpu` como capacidade de hospedagem, nao como taxa de processamento. O framework nao documenta ciclos por segundo.
+
+**Recomendacao metodologica:**
+
+```text
+execution_time_s = cpu_cycles / processing_rate_cycles_per_second
+```
+
+Esta taxa e uma **hipotese experimental provisoria**, nao uma propriedade inferida do EdgeSimPy. A decisao metodologica e manter `processing_rate_cycles_per_second` como parametro configuravel externamente, documentado explicitamente como hipotese, para evitar inventar uma unidade incompativel com o framework.
+
+**Unidade do relogio da Task:**
+
+**Recomendacao:** **Segundos**
+
+**Justificativa:**
+- Consistencia com o relogio nativo do EdgeSimPy (`tick_unit="seconds"`)
+- Evita conversoes desnecessarias entre milissegundos e segundos
+- A conversao `deadline_ms / 1000.0` ja esta implementada em `task.py`
+
+**Avaliacao de deadline violation:**
+
+```python
+deadline_violation = completion_time_s > deadline_time_s
+```
+
+Esta e uma metrica primaria do TCC (conforme skill `tcc-methodology`). Deve ser calculada sempre que `completion_time_s` e `deadline_time_s` estiverem disponiveis.
+
+**Decisoes a ADIAR nesta fase:**
+
+1. Integracao com NetworkFlow - Nao criar flows para transmissao de dados da Task
+2. Decisao Edge/Cloud - Nao implementar politica de offloading
+3. Entidade Cloud - Nao definir CloudServer ou representacao de Cloud
+4. Integracao C# <-> Python - Nao ler CSV/JSON do simulador analitico
+5. ML/WiSARD/MLP - Nao conectar classificadores a Task
+6. Contention real de fila - O prototipo usa `queue_enter_time_s = queue_start_time_s` (zero fila)
+7. Modificacao de EdgeServer - O prototipo nao altera `cpu_demand`, `memory_demand` ou `services` do servidor
+8. Registro no Simulator - A Task nao e agente do EdgeSimPy nesta fase
+
+**Resumo: Fatos vs Recomendacoes:**
+
+| Item | Fato encontrado | Recomendacao metodologica |
+|------|----------------|---------------------------|
+| Unidade do relogio | `task.py` usa segundos, EdgeSimPy usa "seconds" | Manter segundos |
+| CpuCycles → tempo | EdgeSimPy nao define taxa de processamento | Usar `processing_rate_cycles_per_second` como hipotese explicita |
+| Deadline violation | Ja implementado no prototipo | Manter formula `completion_time_s > deadline_time_s` |
+| Transmissao | `transmission_*_time_s` existem mas sao `None` | Adiar NetworkFlow para fase posterior |
+| Fila real | Prototipo usa fila zero | Adiar contention para fase posterior |
+
+**Conclusao:** O modelo atual em `task.py` e o prototipo em `task_execution.py` estao alinhados com a metodologia do TCC. As definicoes temporais sao consistentes com o EdgeSimPy e preservam a separacao entre requisitos (C#) e execucao (simulacao).
+
+**Validacao do prototipo (28/08/2026):**
+
+Arquivos validados:
+- `src/execution/task_execution.py`: executor com hipotese explicita de `processing_rate_cycles_per_second`
+- `src/diagnostico_task_execution.py`: diagnostico deterministico
+
+Comando executado:
+
+```powershell
+cd edgesimpy-simulation
+.\.venv\Scripts\python.exe src\diagnostico_task_execution.py
+```
+
+Resultado obtido:
+
+```text
+Task Execution Diagnostic
+Task: task-001
+Status: completed
+Server: EdgeServer_3
+Creation: 10.0s
+Decision: 10.0s
+Queue Enter: 10.0s
+Queue Start: 10.0s
+Transmission Start: None
+Transmission End: None
+Execution Start: 10.0s
+Execution End: 12.0s
+Completion: 12.0s
+Queue Time: 0.0s
+Execution Time: 2.0s
+Response Time: 2.0s
+Deadline: 11.5s
+Deadline Violation: True
+```
+
+**Interpretacao do resultado:**
+
+1. **Ciclo temporal validado:** O prototipo implementou corretamente o ciclo `CREATED -> QUEUED -> EXECUTING -> COMPLETED` com todos os timestamps preenchidos.
+
+2. **Fila zero por design:** `queue_time_s = 0.0s` e `queue_enter_time_s = queue_start_time_s = 10.0s` confirmam que o prototipo nao modela contention real, conforme decidido metodologicamente.
+
+3. **Tempo de execucao calculado:** `execution_time_s = 2.0s` resulta da formula `cpu_cycles / processing_rate_cycles_per_second`:
+   - `cpu_cycles = 600_000_000`
+   - `processing_rate_cycles_per_second = 300_000_000`
+   - `600_000_000 / 300_000_000 = 2.0s`
+
+4. **Deadline violation detectada:** `deadline_violation = True` porque:
+   - `deadline_time_s = 10.0s + 1.5s = 11.5s`
+   - `completion_time_s = 12.0s`
+   - `12.0s > 11.5s` → violacao
+
+5. **Transmissao ausente:** `transmission_start_time_s` e `transmission_end_time_s` sao `None`, confirmando que NetworkFlow nao foi integrado nesta fase.
+
+6. **Response time consistente:** `response_time_s = 2.0s` = `completion_time_s - creation_time_s` = `12.0s - 10.0s`, validando a metrica primaria do TCC.
+
+**Confirmacoes metodologicas:**
+
+- A hipotese de `processing_rate_cycles_per_second` funciona como parametro configuravel
+- O modelo de Task independente do EdgeSimPy permite execucao local sem modificar o framework
+- As definicoes temporais estao alinhadas com o relogio do EdgeSimPy (segundos)
+- O prototipo cumpre o objetivo de validar o ciclo minimo sem integrar NetworkFlow, Cloud ou ML
+
+**Limitacoes explicitas:**
+
+- `EdgeServer.cpu` nao e usado para calcular tempo de execucao (e capacidade de hospedagem, nao taxa)
+- A taxa de processamento e uma hipotese experimental, nao uma propriedade do EdgeSimPy
+- Nao ha contention real de fila
+- Nao ha transmissao de rede
+- O servidor escolhido nao tem seus recursos modificados
+
+## 20. Analise metodologica de consumo de recursos de Task (28/08/2026)
+
+**Objetivo:** analisar como uma Task deve consumir recursos do EdgeServer, diferenciando fatos do EdgeSimPy de hipoteses de modelagem.
+
+**FATOS encontrados no EdgeSimPy 1.1.0:**
+
+### CPU
+- `EdgeServer.cpu` e um **inteiro** que representa **capacidade de hospedagem** (quantos Services podem ser hospedados)
+- `EdgeServer.cpu_demand` e consumo reservado por Services/registries
+- `has_capacity_to_host()` verifica: `free_cpu >= service.cpu_demand`
+- **Nao existe** documentacao de ciclos por segundo ou taxa de processamento
+- **Nao existe** modelagem de execucao temporal de Tasks no EdgeSimPy nativo
+
+### Memória
+- `EdgeServer.memory` e capacidade em MB (inteiro)
+- `EdgeServer.memory_demand` e consumo reservado em MB (inteiro)
+- `Service.memory_demand` e demanda em MB (inteiro)
+- Quando provisionado: `target_server.memory_demand += self.memory_demand`
+- Quando deprovisionado: `self.server.memory_demand -= self.memory_demand`
+
+### Execução
+- **Nao existe** conceito nativo de "job" ou "execução temporária"
+- Services ocupam recursos **permanentemente** até serem explicitamente deprovisionados
+- O modelo EdgeSimPy é **estático**: uma vez provisionado, o Service continua consumindo recursos
+- Não há mecanismo nativo para "ocupar recursos durante um intervalo de tempo"
+
+### Fila
+- EdgeServer tem `waiting_queue` e `download_queue` para **container layers**
+- **Não existe** fila nativa para Tasks ou execuções
+- O modelo de fila do EdgeSimPy é específico para download de camadas
+
+### Concorrência
+- EdgeServer permite **múltiplos Services** simultaneamente
+- `max_concurrent_layer_downloads = 3` para downloads
+- **Não existe** limite nativo de execuções simultâneas
+
+**Hipóteses de modelagem:**
+
+1. **CPU:** `CpuCycles` da Task **não pode ser relacionado diretamente** com `EdgeServer.cpu`
+2. **Memória:** `Task.required_memory_mb` pode ser mapeado **diretamente** para `memory_demand`
+3. **Execução:** Task precisa de um conceito de **execução temporal** que o EdgeSimPy não fornece
+4. **Fila:** Precisamos criar uma fila de Tasks **independente** do EdgeSimPy
+5. **Concorrência:** Para um TCC, **uma Task por vez** simplifica a análise
+
+**Recomendações metodológicas:**
+
+### CPU
+- Criar abstração explícita `TaskResourceProfile` que separe hospedagem vs execução
+- **Não usar** `EdgeServer.cpu` para calcular tempo de execução
+- **Manter** `processing_rate_cycles_per_second` como hipótese configurável externamente
+
+### Memória
+- **Sim, adicionar `Task.required_memory_mb` ao `memory_demand`** durante a execução
+- **Liberar imediatamente** quando a Task termina
+- **Verificar conflito com Services** usando a mesma lógica de `has_capacity_to_host()`
+
+### Execução
+- **Criar `TaskExecution` como entidade separada**
+- Ciclo de recursos: `execution_start_time_s` → `memory_demand += task.required_memory_mb` → `execution_end_time_s` → `memory_demand -= task.required_memory_mb`
+- **CPU não ocupa `cpu_demand`** - manter separação entre hospedagem (Service) e execução (Task)
+
+### Fila
+- **Criar `TaskQueue` como abstração separada**
+- Cálculo de `queue_time`: `queue_start_time_s - queue_enter_time_s`
+- **Garantir FIFO inicialmente**
+- Uma fila por EdgeServer: `dict[EdgeServer, TaskQueue]`
+
+### Concorrência
+- **Inicialmente: uma Task por vez por EdgeServer** (`max_concurrent_tasks = 1`)
+- Reduz variáveis no experimento inicial
+- Permite isolar efeitos de offloading sem interferência de concorrência
+- Pode ser estendido posteriormente se o TCC justificar
+
+### Reprodutibilidade
+- **Unidade:** manter **cycles per second** (já implementado)
+- **Parametrização:** Expor via arquivo de configuração JSON
+- **Documentação:** Registrar a taxa usada em cada experimento e documentar explicitamente como hipótese
+
+**Modelo mínimo viável proposto:**
+
+```python
+# 1. TaskExecution (execução concreta)
+@dataclass
+class TaskExecution:
+    task: Task
+    server: EdgeServer
+    start_time_s: float
+    end_time_s: Optional[float] = None
+    status: TaskStatus = TaskStatus.CREATED
+
+# 2. TaskQueue (fila por servidor)
+@dataclass
+class TaskQueue:
+    server: EdgeServer
+    pending_tasks: list[Task]  # FIFO
+    max_concurrent: int = 1  # uma Task por vez
+
+# 3. TaskScheduler (gerencia filas e execução)
+class TaskScheduler:
+    queues: dict[EdgeServer, TaskQueue]
+    processing_rate: float  # cycles per second
+    task_memory_usage: dict[EdgeServer, float]  # gerenciamento temporário de memória
+```
+
+**Ciclo proposto:**
+
+```text
+Task criada → Escolha de servidor (política de offloading)
+→ Enqueue em TaskQueue[server]
+→ Aguarda (queue_time)
+→ Começa execução (memory_demand += required_memory_mb)
+→ Executa (execution_time = cpu_cycles / processing_rate)
+→ Termina execução (memory_demand -= required_memory_mb)
+→ Task completada (response_time = completion - creation)
+```
+
+**Separação de responsabilidades:**
+- **Task:** modelo de domínio independente
+- **TaskQueue:** gerenciamento de fila por servidor
+- **TaskScheduler:** orquestração de execução
+- **EdgeServer:** fornece capacidade, mas não conhece Tasks
+
+**Limitações explícitas:**
+1. CPU não ocupa `cpu_demand` (apenas memória)
+2. Uma Task por vez por servidor
+3. Sem preempção
+4. Sem prioridade (FIFO apenas)
+5. `processing_rate_cycles_per_second` é hipótese, não propriedade do EdgeSimPy
+
+## 21. Fase 5: Implementação do modelo temporal de execução de Tasks (28/08/2026)
+
+**Objetivo:** Implementar e validar o primeiro modelo temporal de execução de Tasks com Task → TaskQueue → TaskScheduler → TaskExecution, sem integrar ao ciclo do EdgeSimPy.
+
+**Arquivos criados:**
+
+1. **`src/models/task_execution.py`** - Entidade `TaskExecution` que representa execução concreta:
+   ```python
+   @dataclass
+   class TaskExecution:
+       task: Any
+       server: Any
+       start_time_s: float
+       end_time_s: Optional[float] = None
+       status: TaskStatus = TaskStatus.CREATED
+   ```
+
+2. **`src/execution/task_queue.py`** - Fila FIFO para Tasks por EdgeServer:
+   ```python
+   @dataclass
+   class TaskQueue:
+       server: Any
+       max_concurrent_tasks: int = 1
+       pending_tasks: deque = field(default_factory=deque)
+       current_task: Optional[Any] = None
+       current_execution_end_time_s: Optional[float] = None
+   ```
+
+3. **`src/execution/task_scheduler.py`** - Scheduler determinístico com gerenciamento de memória temporária:
+   - Gerencia filas por servidor
+   - Reserva/libera memória temporária (`task_memory_usage`)
+   - Calcula tempo de execução: `cpu_cycles / processing_rate_cycles_per_second`
+   - Implementa FIFO com `max_concurrent_tasks = 1`
+   - Verifica disponibilidade de memória antes de iniciar execução
+
+4. **`src/diagnostico_task_scheduler.py`** - Diagnóstico determinístico com validação temporal:
+   - Cria duas Tasks no mesmo EdgeServer
+   - Valida cronograma temporal esperado
+   - Monitora consumo de memória temporária
+   - Compara resultados com valores esperados
+
+5. **`src/test_task_scheduler.py`** - Testes obrigatórios A-E:
+   - Teste A: Uma Task (queue_time = 0, execution_time > 0, response_time = execution_time)
+   - Teste B: Duas Tasks no mesmo servidor (FIFO, Task 1 começa primeiro, Task 2 espera)
+   - Teste C: Deadline violation (Task que ultrapassa deadline)
+   - Teste D: Gerenciamento de memória (reserva durante execução, liberação após conclusão)
+   - Teste E: Servidores diferentes (filas não bloqueiam entre servidores)
+
+**Arquivos modificados:**
+
+1. **`src/models/__init__.py`** - Adicionado `TaskExecution` às exportações
+2. **`src/execution/__init__.py`** - Adicionado `TaskQueue` e `TaskScheduler` às exportações
+
+**Resultados dos testes obrigatórios:**
+
+✅ **Teste A - Uma Task:**
+- Queue Time: 0.0s ✓
+- Execution Time: 2.0s ✓
+- Response Time: 2.0s ✓
+
+✅ **Teste B - Duas Tasks no mesmo servidor:**
+- Task 1 Queue Time: 0.0s ✓
+- Task 1 Status: completed ✓
+- Task 2 Queue Time: 2.0s ✓
+- Task 2 Status: completed ✓
+
+✅ **Teste C - Deadline violation:**
+- Deadline Violation: True ✓
+
+✅ **Teste D - Gerenciamento de memória:**
+- Memória inicial: 0 MB ✓
+- Memória durante execução: 256 MB ✓
+- Memória após conclusão: 0 MB ✓
+
+✅ **Teste E - Servidores diferentes:**
+- Task 1 Queue Time: 0.0s ✓
+- Task 2 Queue Time: 0.0s ✓
+- Ambos completados sem bloqueio mútuo ✓
+
+**Resultados do diagnóstico:**
+
+**Validação contra resultados esperados:**
+
+| Métrica | Task 1 (Esperado) | Task 1 (Atual) | Task 2 (Esperado) | Task 2 (Atual) |
+|---------|------------------|----------------|------------------|----------------|
+| Queue Time | 0s | 0.0s ✓ | 2s | 2.0s ✓ |
+| Execution Time | 2s | 2.0s ✓ | 1s | 1.0s ✓ |
+| Response Time | 2s | 2.0s ✓ | 3s | 3.0s ✓ |
+
+**Cronograma temporal validado:**
+
+```
+Task 1: 0s ─────────────── 2s [EXECUTING]
+Task 2: 0s ──────── 2s ─── 3s [QUEUED → EXECUTING]
+```
+
+**Gerenciamento de memória temporal:**
+- Inicial: 0.0 MB
+- Durante Task 1: 256.0 MB
+- Durante Task 2: 512.0 MB
+- Final: 0.0 MB
+
+**Comandos executados:**
+
+```powershell
+cd edgesimpy-simulation
+.\.venv\Scripts\python.exe src\test_task_scheduler.py
+.\.venv\Scripts\python.exe src\diagnostico_task_scheduler.py
+git diff --check
+```
+
+**Decisões metodológicas confirmadas:**
+
+- Não alterar o código-fonte do EdgeSimPy
+- Não utilizar `EdgeServer.cpu` como cycles/second
+- `EdgeServer.cpu` representa capacidade de hospedagem de Services
+- `Task.cpu_cycles` representa trabalho computacional
+- Memória de Task é temporária e separada da memória permanente de Services
+- `max_concurrent_tasks = 1` por EdgeServer
+- Política de fila inicial: FIFO
+- `processing_rate_cycles_per_second = 300_000_000` como hipótese configurável
+
+**Não foram realizadas modificações em:**
+- `edgesimpy-source/`
+- `latency_aware_placement.py`
+- `resource_aware_placement.py`
+- `sample_dataset2.json`
+
+**Criterio de conclusao atingido:**
+
+Demonstrado experimentalmente o cronograma temporal:
+
+```
+Task 1 queue = 0s
+Task 1 execution = 2s
+Task 1 response = 2s
+
+Task 2 queue = 2s
+Task 2 execution = 1s
+Task 2 response = 3s
+```
+
+com a memória temporária sendo corretamente reservada e liberada.
+
+**Proxima fase:** Integração do TaskScheduler ao ciclo temporal do EdgeSimPy.
