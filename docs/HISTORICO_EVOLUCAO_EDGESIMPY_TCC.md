@@ -851,3 +851,42 @@ Deadline Violation: True
 - [monitoring-simulation.ipynb](../edgesimpy-simulation/tutorials/notebooks/monitoring-simulation.ipynb).
 - [creating-placement-algorithm.ipynb](../edgesimpy-simulation/tutorials/notebooks/creating-placement-algorithm.ipynb).
 - Conversa compartilhada: <https://chatgpt.com/share/6a8fa202-5fbc-83e9-befb-2b85352d448b>.
+
+## 18. Gerenciamento de Skills e Agents (27/08/2026)
+
+**Estrutura original:**
+- 5 skills: edgesimpy-debugging, edgesimpy-workflow, experiment-analysis, offloading-ml, tcc-methodology
+- 3 instructions: experiments, python-edgesimpy, copilot-instructions
+
+**Tentativa de consolidacao (27/08/2026):**
+- Foi tentada consolidacao de skills em agents especializados
+- Movido skills para `.github/agents/` como agent profiles
+- Identificado problema: agents nao funcionam com comandos `/nome`
+- Tentada conversao para skills em `.devin/skills/` e `.agents/skills/`
+- Skills nao foram reconhecidos pelo sistema
+
+**Restauracao (27/08/2026):**
+- Consolidacao revertida pelo usuario
+- Restaurada estrutura original com skills separados em `.github/skills/`
+- Mantida simplicidade: 5 skills especializados + 3 instructions
+
+**Melhorias implementadas (27/08/2026):**
+- Adicionado contexto do projeto especifico (politicas existentes, experimentos realizados)
+- Adicionado exemplos concretos de codigo Python
+- Adicionado validacao de ambiente para cada skill
+- Adicionado padroes de debug especificos para o projeto
+- Adicionado localizacoes de dados especificas do projeto
+- Adicionado contexto de status atual do TCC
+
+**Skills disponiveis (comandos `/nome`):**
+- `/edgesimpy-workflow`: Implementacao e explicacao de cenarios EdgeSimPy (com exemplos de codigo e contexto de politicas existentes)
+- `/edgesimpy-debugging`: Debug de scripts EdgeSimPy (com padroes especificos do projeto e problemas comuns)
+- `/experiment-analysis`: Agregacao de resultados, comparacao de politicas, plots (com localizacoes de dados especificas)
+- `/offloading-ml`: Modificacao e avaliacao de politicas de offloading (com contexto do modelo de Task existente)
+- `/tcc-methodology`: Metodologia de pesquisa, design experimental, decisoes de escopo (com contexto do status atual do TCC)
+
+**Licao aprendida:**
+- A estrutura original com skills separados e mais funcional
+- Skills em `.github/skills/` funcionam corretamente com comandos `/nome`
+- A complexidade de consolidacao nao trouxe beneficios significativos
+- Melhorias contextuais tornam as skills mais uteis para o projeto especifico

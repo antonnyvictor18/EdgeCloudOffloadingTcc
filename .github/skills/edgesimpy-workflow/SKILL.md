@@ -5,13 +5,27 @@ description: Use when implementing, debugging, or explaining EdgeSimPy scenarios
 
 # EdgeSimPy workflow
 
-## Environment
+## Environment validation
+Before starting, verify the environment:
+```python
+import edge_sim_py
+print(f"EdgeSimPy version: {edge_sim_py.__version__}")
+# Expected: edge_sim_py 1.1.0
+```
+
 Current project environment:
 - edge_sim_py 1.1.0
 - known commit 76eb5ead74596bb4240759fa4336f1d6f190c70a
 - tutorial datasets:
   `tutorials/datasets/sample_dataset1.json`
   `tutorials/datasets/sample_dataset2.json`
+- existing policies:
+  `policies/latency_aware_placement.py`
+  `policies/resource_aware_placement.py`
+- existing experiments:
+  `diagnostico_primeiro_experimento.py`
+  `diagnostico_segundo_experimento.py`
+  `comparar_politicas_isoladas.py`
 
 ## First actions
 Before changing code:
@@ -53,6 +67,35 @@ The framework supports:
 - inspect component state and logs.
 
 Do not copy a signature from memory if it differs from the installed version.
+
+## Example code pattern
+```python
+from edge_sim_py import Simulator
+
+# Load dataset
+simulator = Simulator()
+dataset_path = "tutorials/datasets/sample_dataset2.json"
+simulator.initialize(input_file=dataset_path)
+
+# Define stopping criterion
+def stopping_criterion(model):
+    return all(service.server is not None for service in Service.all())
+
+# Define resource management algorithm
+def resource_management_algorithm(model):
+    for service in Service.all():
+        if service.server is None and not service.being_provisioned:
+            for edge_server in EdgeServer.all():
+                if edge_server.has_capacity_to_host(service=service):
+                    service.provision(target_server=edge_server)
+                    break
+
+# Run simulation
+simulator.run_model(
+    stopping_criterion=stopping_criterion,
+    resource_management_algorithm=resource_management_algorithm
+)
+```
 
 ## Scenario methodology
 Start with:

@@ -68,17 +68,27 @@ Treat the exact repository contents as authoritative. Inspect files before propo
 
 ## Current learning sequence
 Phase 0: installation/import — completed.
-Phase 1: understand and run a real EdgeSimPy tutorial dataset — current.
+Phase 1: understand and run a real EdgeSimPy tutorial dataset — completed.
+Phase 2: infrastructure diagnostics and baseline policies — completed.
+Phase 3: Task abstraction and execution prototype — completed.
+Phase 4: Task integration with EdgeSimPy — current.
 Then:
-1. minimal scenario
-2. topology/network
-3. NetworkFlow
-4. workload/tasks
-5. baseline policies
-6. C# <-> Python integration
-7. ML policies
-8. system metrics
-9. stress scenarios
-10. scientific analysis
+1. Task offloading decisions
+2. Cloud representation
+3. C# <-> Python integration
+4. ML policies
+5. system metrics
+6. stress scenarios
+7. scientific analysis
 
 Never skip foundational validation just to reach ML faster.
+
+## Skill invocation
+Invoke specialized skills using `/skill-name` based on task type:
+- EdgeSimPy implementation → `/edgesimpy-workflow`
+- EdgeSimPy debugging → `/edgesimpy-debugging`
+- Experiment analysis → `/experiment-analysis`
+- Offloading policies → `/offloading-ml`
+- Research methodology → `/tcc-methodology`
+
+Skills are located in `.github/skills/` and can be invoked with slash commands.

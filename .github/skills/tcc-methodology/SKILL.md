@@ -5,6 +5,13 @@ description: Use for research methodology, scope decisions, experimental design,
 
 # TCC methodology
 
+## Project context
+This is an undergraduate TCC on Edge/Cloud offloading with:
+- Existing C# analytical simulator with baseline policies
+- EdgeSimPy simulation layer for realistic evaluation
+- Task model abstraction ready for integration
+- Current status: Phase 4 (Task integration with EdgeSimPy)
+
 ## Research framing
 The project studies Edge/Cloud offloading decisions and compares simple and ML-based policies.
 

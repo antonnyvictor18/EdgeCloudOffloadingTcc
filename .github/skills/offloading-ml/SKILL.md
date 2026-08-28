@@ -5,6 +5,19 @@ description: Use when modifying or evaluating Random, Rule, Heuristic, WiSARD, M
 
 # Offloading ML skill
 
+## Environment validation
+Verify the ML environment if implementing ML policies:
+```python
+import sklearn
+print(f"scikit-learn version: {sklearn.__version__}")
+# For WiSARD
+try:
+    import wisardpkg
+    print("WiSARD available")
+except ImportError:
+    print("WiSARD not installed")
+```
+
 ## Current policy family
 The TCC includes or plans:
 - Random
@@ -12,6 +25,12 @@ The TCC includes or plans:
 - Simple Heuristic
 - WiSARD
 - MLP
+
+## Project context
+- Existing baseline policies: FirstFit, LatencyAware, ResourceAware
+- Task model: `edgesimpy-simulation/src/models/task.py`
+- Task execution: `edgesimpy-simulation/src/execution/task_execution.py`
+- C# policies exist in the original project for reference
 
 ## Important distinction
 An offline feature vector may describe a state such as:
