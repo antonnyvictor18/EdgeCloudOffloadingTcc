@@ -17,3 +17,17 @@ When working on the TCC:
 - Favor reproducible experiments and system-level outcomes over classifier-only metrics.
 
 When a task is ambiguous, do not ask unnecessary clarification. Make the safest evidence-based assumption, state it briefly, and proceed.
+
+## Validation commands
+
+- C#: `dotnet build EdgeCloudOffloadingTcc.csproj` and `dotnet run --project EdgeCloudOffloadingTcc.csproj`.
+- EdgeSimPy smoke test: `\.venv\Scripts\python.exe edgesimpy-simulation\src\diagnostico_primeiro_experimento.py`.
+- Policy comparison: `\.venv\Scripts\python.exe edgesimpy-simulation\src\comparar_politicas_isoladas.py`.
+- The main EdgeSimPy example requires `edgesimpy-simulation` as the current directory.
+
+## Repository boundaries
+
+- Keep the C# analytical simulator as the baseline and EdgeSimPy as the validation layer unless the research design explicitly changes.
+- Preserve the C# strategy contract and separate policy decisions from simulation execution.
+- Do not invent EdgeSimPy APIs; inspect `edgesimpy-simulation\tutorials\` and `edgesimpy-simulation\edgesimpy-source\` first.
+- Keep generated outputs out of source changes; use the existing `.gitignore` rules for builds, caches, logs, and results.
