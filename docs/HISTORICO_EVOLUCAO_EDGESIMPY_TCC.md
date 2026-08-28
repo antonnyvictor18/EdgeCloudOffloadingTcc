@@ -1,6 +1,8 @@
 # Historico de evolucao do TCC e do EdgeSimPy
 
-Este documento registra o caminho percorrido no projeto ate 26 de agosto de 2026: descobertas, decisoes arquiteturais, experimentos, resultados e pontos pendentes.
+Este documento registra o caminho percorrido no projeto ate 28 de agosto de 2026: descobertas, decisoes arquiteturais, experimentos, resultados e pontos pendentes.
+
+Para o contexto de continuidade resumido (status por fase, regras de ouro, ponto exato de retomada), ver [CONTEXTO_MESTRE_EDGESIMPY_TCC.md](CONTEXTO_MESTRE_EDGESIMPY_TCC.md). A Fase 5 (modelo temporal de Tasks) foi concluida na secao 21 abaixo; a proxima fase (Fase 6) e a integracao do `TaskScheduler` ao ciclo temporal do EdgeSimPy.
 
 ## 1. Ponto de partida
 

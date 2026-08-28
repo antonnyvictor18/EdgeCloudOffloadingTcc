@@ -58,18 +58,22 @@ Local tutorial data:
 - `tutorials/datasets/sample_dataset1.json`
 - `tutorials/datasets/sample_dataset2.json`
 
-## 6. Immediate learning phase
-Current phase is Phase 1.
+## 6. Current phase (2026-08-28)
+Phases 0-5 are completed and validated: environment, official dataset audit,
+Simulator cycle, placement policies (FirstFit/LatencyAware/ResourceAware),
+provisioning audit, and the temporal Task scheduling model (`Task`,
+`TaskStatus`, `TaskExecutor`, `TaskExecution`, `TaskQueue`, `TaskScheduler`,
+FIFO, one task per EdgeServer at a time).
 
-Goal:
-- understand official dataset structure;
-- load an official dataset;
-- instantiate Simulator;
-- run a short simulation;
-- inspect entity counts/relationships;
-- understand service placement and network flows.
+Current phase is **Phase 6**: integrate the Phase 5 `TaskScheduler` into the
+EdgeSimPy temporal cycle (`Simulator.step()` / `DefaultScheduler`), still
+without Task-level `NetworkFlow`, Cloud, ML, or full offloading.
 
-Do not integrate C# or ML until this works.
+Do not integrate C#, ML, Cloud, or full offloading until Phase 6 is validated
+by a deterministic diagnostic. See
+[CONTEXTO_MESTRE_EDGESIMPY_TCC.md](CONTEXTO_MESTRE_EDGESIMPY_TCC.md) for the
+full continuity context and
+[EDGE_SIM_PY_PHASES.md](EDGE_SIM_PY_PHASES.md) for the phase list.
 
 ## 7. EdgeSimPy concepts
 Input JSON has two conceptual groups:
