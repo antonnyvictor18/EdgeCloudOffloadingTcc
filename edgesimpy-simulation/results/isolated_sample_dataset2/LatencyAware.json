@@ -1,0 +1,84 @@
+{
+  "experiment_id": "isolated_sample_dataset2_20260827",
+  "scenario": "tutorials/datasets/sample_dataset2.json",
+  "policy": "LatencyAware",
+  "seed": null,
+  "tick_duration": 1,
+  "tick_unit": "seconds",
+  "simulation_steps": 6,
+  "total_network_flows": 6,
+  "services": [
+    {
+      "service": 1,
+      "user": 1,
+      "server": 3,
+      "delay_ms": 0,
+      "hops": 0,
+      "cpu_available": 6,
+      "ram_available": 4096,
+      "local_offload": "LOCAL",
+      "provisioning_time_s": 1,
+      "sla_ms": 45
+    },
+    {
+      "service": 2,
+      "user": 2,
+      "server": 1,
+      "delay_ms": 10,
+      "hops": 2,
+      "cpu_available": 7,
+      "ram_available": 14336,
+      "local_offload": "OFFLOAD",
+      "provisioning_time_s": 1,
+      "sla_ms": 45
+    },
+    {
+      "service": 3,
+      "user": 3,
+      "server": 2,
+      "delay_ms": 5,
+      "hops": 1,
+      "cpu_available": 7,
+      "ram_available": 14336,
+      "local_offload": "OFFLOAD",
+      "provisioning_time_s": 5,
+      "sla_ms": 25
+    },
+    {
+      "service": 4,
+      "user": 4,
+      "server": 3,
+      "delay_ms": 0,
+      "hops": 0,
+      "cpu_available": 6,
+      "ram_available": 4096,
+      "local_offload": "LOCAL",
+      "provisioning_time_s": 5,
+      "sla_ms": 25
+    },
+    {
+      "service": 5,
+      "user": 5,
+      "server": 6,
+      "delay_ms": 5,
+      "hops": 1,
+      "cpu_available": 11,
+      "ram_available": 14336,
+      "local_offload": "OFFLOAD",
+      "provisioning_time_s": 0,
+      "sla_ms": 25
+    },
+    {
+      "service": 6,
+      "user": 6,
+      "server": 4,
+      "delay_ms": 5,
+      "hops": 1,
+      "cpu_available": 7,
+      "ram_available": 6144,
+      "local_offload": "OFFLOAD",
+      "provisioning_time_s": 0,
+      "sla_ms": 25
+    }
+  ]
+}
