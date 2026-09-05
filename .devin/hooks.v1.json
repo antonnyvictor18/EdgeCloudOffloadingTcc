@@ -1,0 +1,35 @@
+{
+  "UserPromptSubmit": [
+    {
+      "matcher": "",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "$env:PYTHONUTF8=1; python .devin/scripts/update_historico.py"
+        }
+      ]
+    }
+  ],
+  "PostToolUse": [
+    {
+      "matcher": "^(edit|write|exec|read)$",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "$env:PYTHONUTF8=1; python .devin/scripts/update_historico.py"
+        }
+      ]
+    }
+  ],
+  "SessionEnd": [
+    {
+      "matcher": "",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "$env:PYTHONUTF8=1; python .devin/scripts/update_historico.py"
+        }
+      ]
+    }
+  ]
+}

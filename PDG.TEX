@@ -1,0 +1,264 @@
+\documentclass[12pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[portuguese]{babel}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage{amssymb}
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{titlesec}
+\usepackage{graphicx}
+\usepackage{booktabs} 
+\usepackage{tabularx} \usepackage{array}
+% --- Configuração para remover numeração automática das seções ---
+\setcounter{secnumdepth}{0}
+
+% --- Definição do cabeçalho ---
+\pagestyle{myheadings}
+\markright{}
+\pretolerance=10000
+
+\begin{document}
+
+% --- Cabeçalho da Instituição ---
+\begin{center}
+    \large
+    UNIVERSIDADE FEDERAL DO RIO DE JANEIRO \\
+    ESCOLA POLITÉCNICA \\
+    DEPARTAMENTO DE ENGENHARIA DE COMPUTAÇÃO E INFORMAÇÃO
+\end{center}
+
+\vspace{2cm}
+
+% --- Título do Documento ---
+\begin{center}
+    \Large\bfseries
+    PROPOSTA DE PROJETO DE GRADUAÇÃO
+\end{center}
+
+
+% --- Informações do Aluno e Orientador ---
+\begin{center}
+\noindent \textbf{Aluno:} Antonny Victor da Silva \\
+\textbf{E-mail:} antonny.victor.silva@poli.ufrj.br\\
+\textbf{Orientador:} Natasha Costa \\
+\textbf{Curso:} Engenharia de Computação Informação.
+\end{center}
+
+
+
+\section*{\bfseries 1. TÍTULO}
+Avaliação de Redes Neurais para Tomada de Decisão para Task Offloading em Ambientes Simulados de Computação Edge e Cloud
+
+\section*{\bfseries 2. ÊNFASE}
+Computação
+
+
+\section*{\bfseries 3. TEMA}
+O tema deste trabalho versa sobre a tomada de decisões para transferência de
+tarefas computacionais (task offloading) utilizando redes neurais sem peso em infraestruturas heterogêneas de computação em borda
+(Edge) e em nuvem (Cloud).
+
+
+\section*{\bfseries 4. DELIMITAÇÃO}
+Este trabalho delimita-se ao desenvolvimento e à comparação experimental de estratégias de task
+offloading implementadas em duas camadas complementares:
+1) Camada C#/.NET 10 (Simulador Analítico): desenvolvida em .NET 10 responsável pela
+geração de um dataset sintético balanceado e estratificado com 15.000 amostras, pelo cálculo
+analítico do tempo de resposta (Edge/Cloud) que gera os rótulos de treinamento.\\
+
+2) Camada Python (EdgeSimPy): desenvolvida no framework de simulação por eventos discretos EdgeSimPy 1.1.0, atuando como um ambiente de validação temporal e de rede realista. Essa
+camada simula de forma independente as conexões de rede de transporte, filas de servidores, e
+provisionamento. O modelo de tarefas nesta camada é estendido para implementar ciclos de vida
+temporais complexo.\\
+
+O estudo limita-se ao agendamento concorrente e à avaliação estatística das decisões das políticas geradas pela camada C# quando submetidas à simulação realista de eventos discretos da camada
+Python, sem abordar ainda mecanismos de mobilidade física de usuários ou migração de serviços ativos.
+
+O projeto adota uma abordagem de extensões escalonadas: 1) Edge vs Cloud; 2) carga de rede dinâmica; 3) múltiplos servidores Edge; 4) mobilidade; 5) energia, não implementando todas as extensões simultaneamente.
+
+\section*{\bfseries 5. JUSTIFICATIVA}
+O advento de sistemas cibernéticos físicos, Internet das Coisas (IoT), veículos conectados e
+algoritmos de visão computacional em tempo real impõe limites severos às arquiteturas de nuvem
+centralizada. Fatores como saturação do link de rede de longa distância, flutuações severas na largura
+de banda e altos tempos de propagação inviabilizam a transferência de dados pesados para servidores
+em nuvem distantes. A computação em borda (Edge Computing) surge como resposta natural,
+descentralizando servidores físicos e aproximando o processamento dos sensores geradores.No
+entanto, os servidores de borda possuem capacidade restrita de hardware e memória. Tomar a decisão
+correta sobre descarregar (offload) uma tarefa ou executá-la na borda local exige a avaliação
+constante de variáveis complexas e conflitantes. Heurísticas baseadas em regras determinísticas ou
+limiares simples de hardware são ineficazes em ambientes reais de flutuação dinâmica. Redes neurais
+representam uma alternativa viável por sua habilidade em generalizar padrões multidimensionais nãolineares sob condições severas.Contudo, a avaliação de estratégias baseadas em inteligência
+computacional frequentemente peca ao utilizar ambientes simplificados de simulação analítica. A
+integração de um simulador de eventos discretos calibrado como o EdgeSimPy atua como um
+laboratório dinâmico fundamental. Ele possibilita auditar o impacto das decisões de offloading neural
+diretamente sobre métricas físicas simuladas, promovendo uma ponte empírica rigorosa e
+reproduzível para o desenvolvimento de sistemas operacionais de borda mais eficientes.
+
+
+\section*{\bfseries 6. OBJETIVO}
+O objetivo central do trabalho é avaliar o desempenho sistêmico de decisões de task
+offloading geradas por redes neurais artificiais (MLP e WiSARD) em um ambiente dinâmico e
+restrito de simulação física de computação em borda e nuvem, priorizando métricas sistêmicas
+(latência média, P95/P99, taxa de violação de deadline, throughput, utilização de recursos) sobre
+métricas puras de classificação.
+
+O projeto adota uma separação explícita de três camadas: (A) geração analítica de rótulos no
+simulador C#, (B) treinamento dos modelos neurais, e (C) avaliação independente via simulação
+EdgeSimPy, reconhecendo a limitação de circularidade quando A e C compartilham a mesma fórmula.
+
+Para alcançar este objetivo geral, delimitam-se as seguintes etapas de validação:1. Treinar estaticamente os modelos neurais WiSARD
+e MLP em C#, avaliando métricas clássicas de classificação (acurácia, precisão, recall e F1-score)
+contra uma base rotulada sintética.2. Desenvolver um modelo temporal e hierárquico de execução de
+Tasks dentro do ecossistema EdgeSimPy (Fase 5 de simulação), implementando controle estrito de
+memória volátil temporária e filas de agendamento por prioridade (FIFO) por servidor.3. Integrar o
+agendador de tarefas temporais ao ciclo de clock dinâmico principal do simulador (Fase 6),
+permitindo que a passagem de tempo cronológico do EdgeSimPy avance de forma síncrona com os
+eventos de execução de tarefas na borda.4. Acoplar a inteligência de decisão neural do C# ao motor
+em Python via contratos de dados estruturados (CSV/JSON), submetendo as redes a testes de estresse
+computacional e instabilidades de rede (NetworkFlows).5. Comparar sistematicamente as redes
+neurais (WiSARD e MLP) contra políticas clássicas de mercado (Random, Fixed Rule baseada em
+CPU e Simple Heuristic), estabelecendo um ranking empírico das métricas globais do ecossistema.
+
+\section*{\bfseries 7. METODOLOGIA}
+
+A metodologia científica do projeto adota uma progressão estruturada e isolada de engenharia
+e simulação, dividida em fases consecutivas e documentadas:\\
+
+\textbf{Fases Concluídas (Desenvolvimento do Motor Temporal):}
+\begin{itemize}
+    \item Fase 1 e 2: Extração e mapeamento dos relacionamentos físicos do dataset oficial e inicialização limpa do loop dinâmico do simulador EdgeSimPy sem gargalos.
+    \item Fase 3 e 4: Desenvolvimento e comparação determinística das políticas de placement primárias (FirstFit, LatencyAware e ResourceAware), seguida por uma auditoria fina do ciclo de
+provisionamento de recursos de computação na borda.
+    \item  Fase 5: Criação do domínio lógico de tarefas temporárias (Task e TaskStatus) independente de serviços estáticos. Desenvolvimento do componente TaskScheduler em Python, com suporte a múltiplas tarefas, filas FIFO em cada servidor de borda, e consumo de memória temporária que é completamente liberada após a simulação temporal, validado sob rigorosos testes de asserção. Fases Atuais e Futuras (Integração e Testes Neurais):
+\end{itemize}
+
+\textbf{Fases Atuais e Futuras (Integração e Testes Neurais):}
+\begin{itemize}
+    \item  Fase 6 (Fase Corrente): Acoplamento dinâmico do TaskScheduler ao ciclo síncrono temporal do EdgeSimPy (Simulator.step()). Isso garantirá que o relógio físico simulado avance o processamento das tarefas no motor de eventos.
+    \item Fase 7 (Transmissão de Dados): Integração da transmissão de payloads pela rede física através do agendamento dinâmico de NetworkFlows nas linhas de comunicação entre o usuário e o
+servidor escolhido, permitindo modelar a latência estocástica de envio de dados.
+    \item Fase 8 (Acoplamento da Inteligência): Construção da ponte de decisões em Python que invoca
+os modelos WiSARD e MLP para decidir o offloading com base no estado instantâneo do
+simulador. Hipótese: políticas neurais superam heurísticas simples em cenários de carga dinâmica.
+    \item Fase 9 (Análise de Desempenho): Execução de simulações em processos paralelos limpos para
+evitar compartilhamento indesejado de estados dinâmicos. Coleta e consolidação de métricas
+globais: taxas de violação de deadline por aplicação, tempo médio de decisão (overhead), vazão
+sistêmica, latência extrema (P95 e P99) e eficiência energética sob cenários estressantes de
+sobrecarga computacional.
+\end{itemize}
+
+\section*{\bfseries 8. MATERIAIS}
+Para a viabilização e execução do projeto de graduação, serão utilizados os seguintes recursos
+computacionais:\\
+\textbf{Ambiente de Inteligência e Decisão (Lado C#):}
+\begin{itemize}
+    \item SDK do .NET 10 para desenvolvimento em linguagem C# de alto desempenho.
+    \item IDE Microsoft Visual Studio Code ou similar com extensões C# oficiais.
+    \item Algoritmos de redes neurais WiSARD e MLP codificados em código puro, sem pacotes de
+frameworks de aprendizado profundo (como ML.NET ou PyTorch), viabilizando portabilidade e
+execução determinística na banca examinadora. 
+\end{itemize}
+\textbf{Ambiente de Simulação Temporal (Lado Python):}
+\begin{itemize}
+    \item Interpretador Python 3.12 estruturado com ambiente isolado (.venv).
+    \item Simulador EdgeSimPy (versão 1.1.0, commit 76eb5ead74596bb4240759fa4336f1d6f190c70a).
+    \item Bibliotecas científicas auxiliares para manipulação, processamento e modelagem física: Pandas 2.x, Numpy 1.2x, NetworkX (para caminhos mínimos e roteamento de rede via algoritmo Dijkstra), Matplotlib e Seaborn para síntese visual e plotagem dos gráficos de performance
+comparativos.
+\end{itemize}
+\textbf{Hardware para Execução dos Experimentos:}
+\begin{itemize}
+    \item Computador pessoal de mesa equipado com processador multinúcleo x86-64, 16 GB de
+memória RAM e sistema operacional Linux Ubuntu / Windows Subsystem for Linux (WSL) para
+garantia de ambiente de compilação limpo e estável.
+\end{itemize}
+
+\section*{\bfseries 9. CRONOGRAMA}
+O planejamento de execução do projeto de graduação está dividido em fases sequenciais de
+engenharia, integração e redação ao longo do período letivo de 6 meses, conforme detalhado na tabela cronológica e mapeado visualmente na estrutura metodológica do projeto:\\
+\begin{table}[htbp]
+    \centering
+    \caption{Cronograma de execução do Projeto de Graduação}
+    \label{tab:cronograma}
+    
+    \renewcommand{\arraystretch}{1.4}
+    
+    \begin{tabularx}{\textwidth}{
+        >{\raggedright\arraybackslash}X
+        *{6}{>{\centering\arraybackslash}p{0.8cm}}
+    }
+        \toprule
+        \textbf{Atividade / Fase de Trabalho}
+        & \textbf{Mês 1}
+        & \textbf{Mês 2}
+        & \textbf{Mês 3}
+        & \textbf{Mês 4}
+        & \textbf{Mês 5}
+        & \textbf{Mês 6} \\
+        \midrule
+        
+        Fase 1: Configuração do ambiente e treinamento estático (C\#)
+        & X & X & & & & \\[0.1cm]
+        
+        Fase 2: Desenvolvimento de Tasks e Filas no EdgeSimPy
+        & & X & X & & & \\[0.1cm]
+        
+        Fase 3: Acoplamento temporal dinâmico (Fase 6 / NetworkFlow)
+        & & & X & X & & \\[0.1cm]
+        
+        Fase 4: Integração de inteligência neural (C\# $\rightarrow$ Python)
+        & & & & X & X & \\[0.1cm]
+        
+        Fase 5: Análise estatística e redação da monografia final
+        & & & & & X & X \\
+        
+        \bottomrule
+    \end{tabularx}
+    
+    \vspace{0.15cm}
+    
+    \raggedright
+    \footnotesize
+\end{table}
+
+\begin{thebibliography}{99}
+
+\bibitem{souza2023edgesimpy}
+SOUZA, Paulo S.; FERRETO, Tiago; CALHEIROS, Rodrigo N.
+\textit{EdgeSimPy: Python-Based Modeling and Simulation of Edge Computing Resource Management Policies}.
+Future Generation Computer Systems, v. 148, p. 446--459, 2023.
+DOI: \url{https://doi.org/10.1016/j.future.2023.06.013}.
+
+\bibitem{souza2023edgesimpygithub}
+SOUZA, Paulo S. et al.
+\textit{edge\_sim\_py v1.1.0}.
+GitHub, 2023.
+Disponível em: \url{https://github.com/antonnyvictor18/EdgeCloudOffloadingTcc}.
+Acesso em: 30 ago. 2026.
+
+\bibitem{smith2005virtual}
+SMITH, Jim; NAIR, Ravi.
+\textit{Virtual Machines: Versatile Platforms for Systems and Processes}.
+San Francisco: Morgan Kaufmann Publishers, 2005.
+ISBN 1558609105.
+
+\bibitem{souza2024alocacao}
+SOUZA, Paulo S. et al.
+\textit{Análise de Políticas de Alocação em Computação em Borda Usando Simulação de Eventos Discretos}.
+In: SIMPÓSIO BRASILEIRO DE REDES DE COMPUTADORES E SISTEMAS DISTRIBUÍDOS (SBRC), 2024.
+Anais [...]. 2024.
+
+\bibitem{haykin2001redes}
+HAYKIN, Simon.
+\textit{Redes Neurais: Princípios e Prática}.
+2. ed. Porto Alegre: Bookman, 2001.
+
+\bibitem{carneiro2020wisard}
+CARNEIRO, H. C. et al.
+\textit{Multiclass classification with WiSARD weightless neural network}.
+In: INTERNATIONAL CONFERENCE ON HYBRID INTELLIGENT SYSTEMS, 2020.
+Proceedings [...]. 2020.
+
+\end{thebibliography}
+
+
+\end{document}

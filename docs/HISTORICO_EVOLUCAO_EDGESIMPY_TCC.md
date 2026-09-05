@@ -1327,3 +1327,94 @@ Task 2 response = 3s
 com a memória temporária sendo corretamente reservada e liberada.
 
 **Proxima fase:** Integração do TaskScheduler ao ciclo temporal do EdgeSimPy.
+
+## 22. Implementação de hook para documentação automática (30/08/2026)
+
+**Objetivo:** Criar um sistema automático para documentar discussões, decisões e implementações das sessões de IA no arquivo `HISTORICO_EVOLUCAO_EDGESIMPY_TCC.md`.
+
+**Arquivos criados:**
+
+1. **`.devin/scripts/update_historico.py`** - Script Python que processa eventos do hook:
+   - Captura prompts do usuário via evento `UserPromptSubmit`
+   - Registra uso de ferramentas relevantes via `PostToolUse` (edit, write, exec, read)
+   - Processa dados da sessão via `SessionEnd`
+   - Gera entrada formatada para o histórico ao final da sessão
+   - Gerencia encoding UTF-8 para caracteres acentuados
+
+2. **`.devin/hooks.v1.json`** - Configuração do hook Devin CLI:
+   ```json
+   {
+     "UserPromptSubmit": [...],
+     "PostToolUse": [...],
+     "SessionEnd": [...]
+   }
+   ```
+
+**Metodologia implementada:**
+
+- **Acúmulo de dados:** Durante a sessão, prompts e ferramentas usadas são acumulados em `.devin/session_data.json`
+- **Formatação automática:** Ao final da sessão (`SessionEnd`), os dados são processados e formatados
+- **Numeração automática:** O script determina o próximo número de seção automaticamente
+- **Ferramentas relevantes:** Apenas edit, write, exec e read são registrados (filtragem de ruído)
+- **Resumo de uso:** Ferramentas são agrupadas por tipo com contagem de uso
+
+**Estrutura da entrada gerada:**
+
+```markdown
+## N. Sessão de DD/MM/AAAA HH:MM
+
+**Prompts do usuário:**
+
+1. Primeiro prompt
+2. Segundo prompt
+
+**Ferramentas utilizadas:**
+
+- edit: X vez(es)
+- write: Y vez(es)
+- exec: Z vez(es)
+---
+```
+
+**Decisões de design:**
+
+- **Separação de responsabilidades:** O hook não modifica código, apenas documenta
+- **Não intrusivo:** Não interfere na execução normal das ferramentas
+- **Encoding robusto:** Tratamento especial para UTF-8 em Windows
+- **Filtragem inteligente:** Apenas ferramentas relevantes para documentação são registradas
+- **Acúmulo em memória:** Dados temporários em JSON, limpos ao final da sessão
+
+**Benefícios esperados:**
+
+- Rastreabilidade completa de decisões e implementações
+- Registro automático sem intervenção manual
+- Histórico temporal estruturado
+- Facilidade de revisão de contexto anterior
+
+**Limitações atuais:**
+
+- Não captura contexto de decisão (apenas prompts e ferramentas)
+- Não diferencia entre tipos de discussão (implementação vs metodologia)
+- Não registra resultados de comandos exec
+- Requer sessão completa para gerar entrada (não incremental)
+
+**Próximas melhorias possíveis:**
+
+- Categorização automática de tipos de trabalho (debug, implementação, análise)
+- Captura de resultados importantes de comandos exec
+- Integração com skills para contexto de domínio
+- Geração de sumário executivo por sessão
+
+---
+
+## 23. Sessão de 30/08/2026 01:42
+
+**Prompts do usuário:**
+
+1. Criar sistema de documentação automática para o TCC
+
+**Ferramentas utilizadas:**
+
+- edit: 1 vez(es)
+
+---
