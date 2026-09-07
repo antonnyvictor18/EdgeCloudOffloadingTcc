@@ -2893,3 +2893,115 @@ matriz de confusão ficam como métricas secundárias.
 
 Nenhum treinamento, novo dataset, Cloud, WiSARD ou MLP foi implementado nesta
 etapa.
+
+## 33. Fase 14: contrato de dados X/y para ML (07/09/2026)
+
+**Objetivo:** preparar um dataset reproduzível para futuros modelos WiSARD e
+MLP, sem implementar treinamento e sem inserir informações futuras nas
+features.
+
+### Contrato final
+
+O contrato atual usa somente as cinco features garantidamente compartilháveis
+entre `OffloadingSample` e `Task`:
+
+```text
+X = [
+    CpuCycles,
+    TaskSizeMB,
+    DeadlineMs,
+    LatencySensitivity,
+    RequiredMemoryMB
+]
+
+y = BestDestination in {Edge, Cloud}
+```
+
+`path_delay_ms` e `admitted_task_count` foram explicitamente omitidos do CSV
+atual: o primeiro não existe no contrato C# e o segundo depende do estado de
+decisão do experimento EdgeSimPy. Eles só poderão ser adicionados em uma
+versão posterior com um contrato de contexto rastreável.
+
+### Arquivos criados
+
+- [ml/dataset.py](../edgesimpy-simulation/src/ml/dataset.py): loader, schema,
+  metadata, split estratificado e estatísticas;
+- [ml/__init__.py](../edgesimpy-simulation/src/ml/__init__.py): exportação do
+  contrato;
+- [test_ml_dataset.py](../edgesimpy-simulation/src/test_ml_dataset.py):
+  validações do contrato.
+
+### Rastreabilidade
+
+O metadata registra:
+
+- `dataset_version = csharp-analytical-v1`;
+- `source_seed = 42`;
+- `split_seed = 43`;
+- `label_source = analytical_simulator`;
+- nomes e ordem das features;
+- features omitidas, incluindo resultados e contexto EdgeSimPy ausente.
+
+O loader rejeita labels diferentes de `Edge` e `Cloud`, valores não finitos,
+colunas obrigatórias ausentes e linhas sem dados. As colunas
+`ExecutionTimeEdge`, `ExecutionTimeCloud`, `TotalResponseTimeEdge`,
+`TotalResponseTimeCloud` e `BestDestination` permanecem fora de `X`.
+
+### Split reproduzível
+
+O dataset atual contém amostras independentes geradas por sorteios sucessivos
+do `SyntheticDatasetGenerator`. Não há identificador de cenário lógico nem
+sequência temporal de simulação; por isso foi usada divisão estratificada por
+label em nível de amostra:
+
+```text
+70% train
+15% validation
+15% test
+```
+
+O split usa `split_seed = 43`, preserva as classes e garante IDs disjuntos
+entre as partições. Se uma futura versão possuir grupos ou variações do mesmo
+cenário, o split deverá ser agrupado por esse identificador antes de qualquer
+treinamento.
+
+### Resultado do dataset atual
+
+- amostras: `15.000`;
+- train: `10.500`;
+- validation: `2.250`;
+- test: `2.250`;
+- Edge: `9.362` (`62,41%`);
+- Cloud: `5.638` (`37,59%`).
+
+Não foi aplicado oversampling, undersampling, SMOTE ou qualquer balanceamento.
+Também não foi aplicada normalização; os mínimos, máximos e médias foram
+registrados para uma futura normalização dentro do pipeline do modelo.
+
+### Limitações metodológicas
+
+1. `y` é produzido pelo `EdgeCloudSimulator`, portanto o modelo aprende o
+   simulador analítico e não uma observação física independente.
+2. As features de CPU/RAM/fila Edge presentes no C# não foram copiadas para o
+   contrato EdgeSimPy porque ainda não há equivalentes confiáveis no instante
+   da decisão.
+3. `path_delay_ms` e `admitted_task_count` ainda não estão disponíveis no CSV
+   C# atual.
+4. O split aleatório é defensável para as amostras independentes atuais, mas
+   pode causar leakage se futuros dados tiverem variações do mesmo cenário sem
+   um identificador de grupo.
+
+### Validação
+
+Comando executado:
+
+```powershell
+cd edgesimpy-simulation
+.venv\Scripts\python.exe src\test_ml_dataset.py
+```
+
+Resultado: `ML dataset contract: PASS`. Foram validados número e nomes das
+features, tipos, labels, ausência de valores não finitos, ausência de
+features futuras, reprodutibilidade, disjunção dos splits e estatísticas.
+
+Nenhum treinamento, WiSARD, MLP, tuning ou novo dataset foi implementado.
