@@ -5,11 +5,11 @@
 > linha metodológica, arquitetura, nomenclatura e sequência de
 > desenvolvimento. **Não recomeçar o estudo do EdgeSimPy do zero.**
 >
-> Última atualização: 28/08/2026. Este documento substitui/consolida uma
-> versão anterior que descrevia a Fase 5 como "próxima" — a Fase 5 foi
-> concluída na mesma data (ver commit `6d24329` e
-> [HISTORICO_EVOLUCAO_EDGESIMPY_TCC.md, seção 21](HISTORICO_EVOLUCAO_EDGESIMPY_TCC.md)).
-> O ponto de retomada real é a **Fase 6**.
+> Última atualização: 04/09/2026. Este documento substitui/consolida uma
+> versão anterior que descrevia a Fase 6 como "próxima" — a Fase 6 foi
+> concluída nesta data (ver
+> [HISTORICO_EVOLUCAO_EDGESIMPY_TCC.md, seção 24](HISTORICO_EVOLUCAO_EDGESIMPY_TCC.md)).
+> O ponto de retomada real é a **Fase 7** (NetworkFlow, Cloud, ML ou outras extensões).
 
 ## 1. Objetivo deste documento
 
@@ -92,7 +92,8 @@ FASE 5   Modelo temporal de execução de Tasks
          (Task, TaskStatus, TaskExecutor, TaskExecution,
          TaskQueue, TaskScheduler — FIFO, 1 task/servidor)  ✅ concluída (28/08/2026)
 FASE 6   Integração do TaskScheduler ao ciclo temporal
-         do EdgeSimPy                                       🔵 ATUAL / próxima
+         do EdgeSimPy                                       ✅ concluída (04/09/2026)
+FASE 7   Extensões (NetworkFlow, Cloud, ML, mobilidade)    🔵 ATUAL / próxima
 ```
 
 Componentes já desenvolvidos e que devem ser considerados **realizados**, não
@@ -107,7 +108,9 @@ tarefas futuras:
   `src/models/task_execution.py`, `src/execution/task_queue.py`,
   `src/execution/task_scheduler.py`), com diagnóstico
   (`src/diagnostico_task_scheduler.py`) e testes obrigatórios A–E
-  (`src/test_task_scheduler.py`), todos passando.
+  (`src/test_task_scheduler.py`), todos passando;
+- `TaskSchedulerIntegration` (camada de integração, `src/integration/task_scheduler_integration.py`);
+- diagnóstico de integração temporal (`src/diagnostico_integracao_task_scheduler.py`).
 
 ---
 
@@ -312,11 +315,15 @@ alterados.
 
 ## 9. O que o modelo de Task/Scheduler ainda NÃO faz
 
-Mesmo após a Fase 5, o `TaskScheduler` continua **independente** do
-`Simulator` do EdgeSimPy:
+Após a Fase 6, o `TaskScheduler` está **integrado** ao ciclo temporal do
+EdgeSimPy via `TaskSchedulerIntegration`:
 
 ```text
 EdgeSimPy
+    │
+    ├── resource_management_algorithm
+    │         └── TaskSchedulerIntegration.step()
+    │                  └── TaskScheduler.step(current_time_s)
     │
     └── EdgeServer (referenciado, não modificado em cpu/cpu_demand)
 
@@ -325,8 +332,14 @@ TaskScheduler
     └── TaskQueue[EdgeServer] → TaskExecution → Task
 ```
 
-Ele ainda não:
-- avança o scheduler/`Simulator.step()` do EdgeSimPy;
+O que foi integrado na Fase 6:
+- ✅ TaskScheduler avança sincronizado com `Simulator.step()` (um tick por tick)
+- ✅ EdgeSimPy é o relógio mestre (`schedule.time * tick_duration`)
+- ✅ TaskScheduler não possui relógio paralelo
+- ✅ Tempo é derivado do EdgeSimPy e passado como parâmetro
+- ✅ Integração via `resource_management_algorithm` (mecanismo oficial)
+
+O que ainda NÃO faz:
 - cria `NetworkFlow` para transmissão de dados da Task;
 - ocupa `EdgeServer.cpu_demand` (só ocupa memória temporária);
 - interage com `Service`, placement ou provisioning;
@@ -334,31 +347,62 @@ Ele ainda não:
 
 ---
 
-## 10. Fase 6 — próxima etapa (ponto de retomada real)
+## 10. Fase 6 — concluída (04/09/2026)
 
-**Objetivo da Fase 6**: decidir e implementar, de forma incremental e
-validada por diagnóstico, como o `TaskScheduler` (Fase 5) se conecta ao ciclo
-temporal real do EdgeSimPy (`Simulator.step()` / `DefaultScheduler`), sem
-ainda introduzir `NetworkFlow` de dados de Task, Cloud, ML ou offloading
-completo.
+**Objetivo da Fase 6**: integrar o `TaskScheduler` ao ciclo temporal real do
+EdgeSimPy, garantindo que EdgeSimPy seja o relógio mestre e que o TaskScheduler
+avançe exatamente uma vez por tick.
 
-Perguntas metodológicas a responder antes de implementar (na ordem: decisão
-metodológica → implementação → diagnóstico → validação):
+**Decisões metodológicas tomadas:**
 
-1. O `TaskScheduler` deve ser avançado a cada `Simulator.step()` (um tick por
-   tick, em paralelo ao ciclo do EdgeSimPy) ou continuar sendo avançado de
-   forma independente/offline?
-2. Como uma Task passa a ser "criada" a partir de um evento observável do
-   EdgeSimPy (ex.: `User.making_requests`) sem confundir Task com Service?
-3. O relógio da Task (`*_time_s`) deve necessariamente coincidir com
-   `schedule.steps`/`schedule.time` do EdgeSimPy quando integrado?
-4. Que ponto de extensão do EdgeSimPy deve ser usado — um agente custom, um
-   hook no `resource_management_algorithm`, ou observação passiva via
-   `agent_metrics`/`collect()` — sem modificar o código-fonte do EdgeSimPy?
+1. **Relógio mestre:** EdgeSimPy (`schedule.time` e `schedule.steps`)
+2. **Mecanismo de integração:** `resource_management_algorithm` (oficial)
+3. **Independência:** Código do TaskScheduler permanece separado
+4. **Tempo derivado:** `current_time_s = schedule.time * tick_duration`
+5. **Sem relógio paralelo:** TaskScheduler não possui estado temporal próprio
 
-**Não fazer ainda na Fase 6** (herdado das restrições anteriores, ainda
-válidas): `NetworkFlow` para dados de Task, Cloud, ML (WiSARD/MLP),
-offloading completo, mobilidade, integração C#↔Python.
+**Arquitetura implementada:**
+
+- `src/integration/task_scheduler_integration.py` — camada explícita de integração
+- `TaskSchedulerIntegration` — wrapper que sincroniza TaskScheduler com EdgeSimPy
+- `TickMetrics` — estrutura para coleta de métricas por tick
+- Integração via `resource_management_algorithm` (mecanismo oficial EdgeSimPy)
+
+**Validação realizada:**
+
+- ✅ TaskScheduler sincronizado ao relógio do EdgeSimPy
+- ✅ Não existe relógio paralelo
+- ✅ TaskScheduler chamado uma vez por tick
+- ✅ Métricas temporais permanecem corretas
+- ✅ EdgeSimPy original não foi modificado
+
+**Experimento de validação:**
+
+- Dataset: `sample_dataset2.json`
+- EdgeServer: EdgeServer_3 (CPU=8, Memory=8192MB)
+- Processing rate: 500 cycles/segundo
+- Tick duration: 1 segundo
+- Task A: 1000 cycles, 100MB memory → execution_time = 2.0s
+- Task B: 1000 cycles, 100MB memory → execution_time = 2.0s (começa em t=2.0)
+
+**Resultados obtidos:**
+
+- Task A: queue_time = 0s, execution_time = 2.0s, response_time = 2.0s
+- Task B: queue_time = 2.0s, execution_time = 2.0s, response_time = 4.0s
+- Todas as 10 validações passaram
+- Comportamento determinístico conforme esperado
+
+**Restrições respeitadas:**
+
+- Não modificar o código-fonte do EdgeSimPy ✅
+- Não alterar sample_dataset2.json ✅
+- Não implementar NetworkFlow de Task ✅
+- Não implementar Cloud ✅
+- Não implementar ML ✅
+- Não implementar offloading ✅
+- Não criar Tasks automaticamente a partir de Users ainda ✅
+
+Ver detalhes completos em [HISTORICO_EVOLUCAO_EDGESIMPY_TCC.md, seção 24](HISTORICO_EVOLUCAO_EDGESIMPY_TCC.md).
 
 ---
 
@@ -401,19 +445,19 @@ TaskExecutor (unitário)                 ✅
 TaskExecution / TaskQueue / TaskScheduler ✅ (28/08/2026, testes A–E ok)
 Modelo de recursos (memória temp. vs
 permanente; CPU não ocupa cpu_demand)   ✅ definido e implementado
-Integração TaskScheduler ↔ EdgeSimPy     🔵 PRÓXIMO (Fase 6)
-NetworkFlow para Task                   ⏳ depois
+Integração TaskScheduler ↔ EdgeSimPy     ✅ concluída (04/09/2026)
+TaskSchedulerIntegration                ✅ implementado
+Diagnóstico de integração temporal      ✅ validado
+NetworkFlow para Task                   🔵 PRÓXIMO (Fase 7)
 Offloading completo                     ⏳ depois
 Cloud                                   ⏳ depois
 Integração C# ↔ Python                  ⏳ depois
 ML (WiSARD, MLP) no EdgeSimPy           ⏳ depois
 ```
 
-**Ponto exato de retomada**: analisar metodologicamente como conectar o
-`TaskScheduler` já validado (Fase 5) ao ciclo temporal real do
-`Simulator`/`DefaultScheduler` do EdgeSimPy (Fase 6), sem introduzir ainda
-`NetworkFlow` de Task, Cloud, offloading completo ou ML, e validando cada
-decisão com um diagnóstico determinístico antes de prosseguir.
+**Ponto exato de retomada**: Fase 7 — implementar NetworkFlow para dados da
+Task, Cloud, offloading completo, ML ou outras extensões, mantendo a mesma
+metodologia de decisão → implementação → diagnóstico → validação.
 
 ---
 

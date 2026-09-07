@@ -1,8 +1,8 @@
 # Historico de evolucao do TCC e do EdgeSimPy
 
-Este documento registra o caminho percorrido no projeto ate 28 de agosto de 2026: descobertas, decisoes arquiteturais, experimentos, resultados e pontos pendentes.
+Este documento registra o caminho percorrido no projeto ate 4 de setembro de 2026: descobertas, decisoes arquiteturais, experimentos, resultados e pontos pendentes.
 
-Para o contexto de continuidade resumido (status por fase, regras de ouro, ponto exato de retomada), ver [CONTEXTO_MESTRE_EDGESIMPY_TCC.md](CONTEXTO_MESTRE_EDGESIMPY_TCC.md). A Fase 5 (modelo temporal de Tasks) foi concluida na secao 21 abaixo; a proxima fase (Fase 6) e a integracao do `TaskScheduler` ao ciclo temporal do EdgeSimPy.
+Para o contexto de continuidade resumido (status por fase, regras de ouro, ponto exato de retomada), ver [CONTEXTO_MESTRE_EDGESIMPY_TCC.md](CONTEXTO_MESTRE_EDGESIMPY_TCC.md). A Fase 6 (integracao do TaskScheduler ao ciclo temporal do EdgeSimPy) foi concluida na secao 24 abaixo; a comunicacao de Tasks via NetworkFlow e sua integracao com o TaskScheduler foram concluidas nas secoes 25 e 26; a proxima etapa e conectar baselines de offloading a experimentos controlados.
 
 ## 1. Ponto de partida
 
@@ -1418,3 +1418,660 @@ com a memória temporária sendo corretamente reservada e liberada.
 - edit: 1 vez(es)
 
 ---
+
+## 24. Fase 6: Integração do TaskScheduler ao ciclo temporal do EdgeSimPy (04/09/2026)
+
+**Objetivo:** Integrar o TaskScheduler ao ciclo temporal real do EdgeSimPy, garantindo que EdgeSimPy seja o relógio mestre e que o TaskScheduler avance exatamente uma vez por tick.
+
+**Contexto metodológico:**
+
+A Fase 5 validou o modelo temporal de execução de Tasks com TaskScheduler, TaskQueue e TaskExecution operando independentemente do EdgeSimPy. A Fase 6 conecta esse modelo ao ciclo temporal do framework, seguindo as decisões metodológicas estabelecidas:
+
+- EdgeSimPy deve ser o relógio mestre
+- TaskScheduler não deve possuir relógio paralelo
+- Integração deve preservar independência do código do EdgeSimPy
+- Tempo deve ser derivado de `schedule.time * tick_duration`
+
+**Análise metodológica pré-implementação:**
+
+Foi realizada uma análise detalhada do código atual do EdgeSimPy 1.1.0 e do TaskScheduler para responder 10 questões fundamentais:
+
+1. **Relógio mestre:** EdgeSimPy já possui relógio mestre (`schedule.time` e `schedule.steps` em `DefaultScheduler`)
+2. **Recebimento de tempo:** TaskScheduler já recebe `current_time_s` como parâmetro em `step()`
+3. **Ponto de execução:** TaskScheduler deve executar dentro do `resource_management_algorithm`, antes da ativação dos agentes nativos
+4. **Método de integração:** Integrar via `user_defined_functions` - mecanismo oficial que preserva independência máxima
+5. **Independência:** `user_defined_functions` não requer subclassing ou modificação de componentes EdgeSimPy
+6. **Execução única por tick:** `resource_management_algorithm` é chamado exatamente uma vez por `step()`
+7. **Mapeamento de tempo:** `current_time_s = schedule.time * tick_duration`
+8. **Tratamento de tick_duration diferente de 1 segundo:** TaskScheduler deve usar tempo calculado em segundos, independente do valor de `tick_duration`
+9. **Prevenção de relógio paralelo:** Remover qualquer campo de tempo que possa existir no TaskScheduler
+10. **Teste de sincronização:** Validar que timestamps das Tasks correspondem exatamente a `schedule.time * tick_duration`
+
+**Decisão arquitetural única:**
+
+Integrar via `user_defined_functions` dentro do `resource_management_algorithm`, calculando tempo como `schedule.time * tick_duration`.
+
+**Racional:**
+- Usa mecanismo oficial do EdgeSimPy sem modificar código do framework
+- Preserva independência completa do código do TaskScheduler
+- Garante execução única por tick
+- TaskScheduler continua recebendo tempo como parâmetro (sem estado temporal próprio)
+- Permite evolução futura sem refatoração
+
+**Arquivos criados:**
+
+1. **`src/integration/__init__.py`** - Módulo de integração:
+   ```python
+   from .task_scheduler_integration import (
+       TaskSchedulerIntegration,
+       TickMetrics,
+   )
+   ```
+
+2. **`src/integration/task_scheduler_integration.py`** - Camada explícita de integração:
+   - `TaskSchedulerIntegration`: Wrapper que sincroniza TaskScheduler com EdgeSimPy
+   - `TickMetrics`: Estrutura para coleta de métricas por tick
+   - `submit_task()`: Queue tasks para submissão no próximo tick
+   - `step()`: Avança TaskScheduler com tempo derivado do EdgeSimPy
+   - `collect_tick_metrics()`: Coleta métricas para validação
+   - `record_tick_metrics()`: Registra métricas para análise posterior
+
+3. **`src/diagnostico_integracao_task_scheduler.py`** - Script de diagnóstico e validação:
+   - Carrega `sample_dataset2.json`
+   - Obtém EdgeServer_3
+   - Cria duas Tasks com parâmetros conhecidos
+   - Submete ambas em t=0
+   - Executa simulação com TaskScheduler sincronizado
+   - Registra métricas a cada tick
+   - Valida comportamento determinístico
+
+**Experimento de validação:**
+
+**Configuração:**
+- Dataset: `sample_dataset2.json`
+- EdgeServer: EdgeServer_3 (CPU=8, Memory=8192MB)
+- Processing rate: 500 cycles/segundo
+- Tick duration: 1 segundo
+- Task A: 1000 cycles, 100MB memory, deadline 10s
+- Task B: 1000 cycles, 100MB memory, deadline 10s
+
+**Resultado esperado:**
+- Task A: 1000 cycles / 500 cycles/s = 2.0 segundos de execução
+- Task B: 1000 cycles / 500 cycles/s = 2.0 segundos de execução (começa em t=2.0, termina em t=4.0)
+- Queue time de A = 0 (começa imediatamente)
+- Queue time de B = 2.0 (aguarda Task A completar)
+
+**Comando executado:**
+
+```powershell
+cd edgesimpy-simulation
+.\.venv\Scripts\python.exe src\diagnostico_integracao_task_scheduler.py
+```
+
+**Resultados obtidos:**
+
+**Métricas por tick:**
+
+```
+Tick   Time(s)    Task A       Task B       Queue  Current      Mem(MB) 
+0      0.0        executing    queued       1      task_a       100.0   
+1      1.0        executing    queued       1      task_a       100.0   
+2      2.0        completed    executing    0      task_b       100.0   
+3      3.0        completed    executing    0      task_b       100.0   
+4      4.0        completed    completed    0      None         0.0  
+```
+
+**Validações (10/10 passaram):**
+
+- [OK] Task A iniciou em t=0
+- [OK] Task A completou em t=2.0
+- [OK] Task B iniciou em t=2.0 (após Task A completar)
+- [OK] Task B completou em t=4.0
+- [OK] Queue time de Task A = 0
+- [OK] Queue time de Task B = 2.0 (> 0)
+- [OK] TaskScheduler não possui relógio paralelo
+- [OK] TaskScheduler avançou 5 vezes (um por tick)
+- [OK] Timestamps correspondem ao tempo esperado
+- [OK] Ambas Tasks completaram sem deadline violation
+
+**Detalhes finais das Tasks:**
+
+**Task A:**
+- Status: completed
+- Queue enter: 0.0s
+- Queue start: 0.0s
+- Execution start: 0.0s
+- Execution end: 2.0s
+- Completion: 2.0s
+- Queue time: 0.0s
+- Response time: 2.0s
+
+**Task B:**
+- Status: completed
+- Queue enter: 0.0s
+- Queue start: 2.0s
+- Execution start: 2.0s
+- Execution end: 4.0s
+- Completion: 4.0s
+- Queue time: 2.0s
+- Response time: 4.0s
+
+**Demonstração dos objetivos:**
+
+1. **TaskScheduler sincronizado ao relógio do EdgeSimPy ✅**
+   - TaskScheduler avança exatamente uma vez por tick
+   - Métricas mostram correspondência entre `edge_sim_py_time` e timestamps das Tasks
+   - Todas as validações temporais passaram
+
+2. **Não existe relógio paralelo ✅**
+   - TaskScheduler não possui atributo `current_time` ou qualquer estado temporal próprio
+   - Tempo é sempre derivado de `schedule.time * tick_duration`
+
+3. **TaskScheduler chamado uma vez por tick ✅**
+   - TaskScheduler avançou 5 vezes para uma simulação de 5 ticks
+   - Integração via `resource_management_algorithm` garante execução única
+
+4. **Métricas temporais permanecem corretas ✅**
+   - Task A: execution_start_time_s = 0.0, execution_end_time_s = 2.0
+   - Task B: execution_start_time_s = 2.0, execution_end_time_s = 4.0
+   - Queue time de A = 0, Queue time de B = 2.0
+   - Comportamento determinístico conforme esperado
+
+5. **EdgeSimPy original não foi modificado ✅**
+   - Nenhum arquivo em `edgesimpy-source/` foi alterado
+   - Integração usa mecanismo oficial (`resource_management_algorithm`)
+   - Independência total do código do EdgeSimPy
+
+**Arquitetura implementada:**
+
+**Camada de Integração (`src/integration/`):**
+- `TaskSchedulerIntegration`: Wrapper que sincroniza TaskScheduler com EdgeSimPy
+- `TickMetrics`: Estrutura para coleta de métricas por tick
+- Integração via `resource_management_algorithm` (mecanismo oficial EdgeSimPy)
+- Tempo derivado: `current_time_s = schedule.time * tick_duration`
+
+**Fluxo de execução:**
+1. EdgeSimPy avança um tick
+2. `resource_management_algorithm` é chamado automaticamente
+3. `TaskSchedulerIntegration.step()` calcula tempo do EdgeSimPy
+4. TaskScheduler avança com o tempo derivado
+5. Métricas são registradas para validação
+
+**Restrições respeitadas:**
+
+1. Não modificar o código-fonte do EdgeSimPy ✅
+2. Não alterar sample_dataset2.json ✅
+3. Não implementar NetworkFlow de Task ✅
+4. Não implementar Cloud ✅
+5. Não implementar ML ✅
+6. Não implementar offloading ✅
+7. Não criar Tasks automaticamente a partir de Users ainda ✅
+
+**Conclusão metodológica:**
+
+A implementação segue rigorosamente a decisão metodológica estabelecida:
+
+- **Relógio mestre:** EdgeSimPy (`schedule.time`)
+- **Mecanismo de integração:** `resource_management_algorithm` (oficial)
+- **Independência:** Código do TaskScheduler permanece separado
+- **Determinismo:** Comportamento totalmente previsível e validado
+- **Extensibilidade:** Arquitetura permite evolução futura sem refatoração
+
+**Arquivos alterados:**
+- Nenhum arquivo existente foi modificado (EdgeSimPy original não foi alterado)
+
+**Arquivos criados:**
+- `edgesimpy-simulation/src/integration/__init__.py`
+- `edgesimpy-simulation/src/integration/task_scheduler_integration.py`
+- `edgesimpy-simulation/src/diagnostico_integracao_task_scheduler.py`
+
+**Próximas extensões possíveis:**
+- NetworkFlow para dados da Task
+- Implementação de Cloud
+- Offloading completo
+- Integração ML
+- WiSARD
+- MLP
+- Mobilidade
+- Geração automática de Tasks por User
+
+A Fase 6 está validada e pronta para as próximas extensões.
+
+## 25. Fase 7: Comunicação de Tasks via NetworkFlow (05/09/2026)
+
+**Objetivo:** Implementar comunicação de rede para upload de dados de Task usando a infraestrutura de NetworkFlow do EdgeSimPy, sem ainda integrar ao TaskScheduler para execução.
+
+**Contexto metodológico:**
+
+A Fase 6 validou a integração do TaskScheduler ao ciclo temporal do EdgeSimPy. A Fase 7 adiciona a camada de comunicação de rede, permitindo que Tasks transfiram seus dados de entrada até o EdgeServer antes da execução, seguindo as decisões metodológicas estabelecidas:
+
+- EdgeSimPy deve ser o relógio mestre
+- NetworkFlow deve representar transmissão de dados de Task
+- Tempo deve ser derivado de `schedule.steps * tick_duration`
+- Não modificar código-fonte do EdgeSimPy
+- Metadata customizado para identificar flows de Task
+- Unidade de dados como hipótese operacional documentada
+
+**Investigação pré-implementação:**
+
+Foi realizada uma investigação detalhada do código EdgeSimPy 1.1.0 e experimentos de validação para responder questões fundamentais sobre NetworkFlow:
+
+1. **Estrutura de NetworkFlow:** Analisado `network_flow.py`, `topology.py`, `network_link.py`
+2. **Algoritmos de scheduling:** Analisado `max_min_fairness.py` e `equal_share.py`
+3. **Unidades de dados:** Investigado via `diagnostico_networkflow_unidades.py` e testes experimentais
+4. **Endpoints de source/target:** Validado via `test_networkflow_transfer.py`
+5. **Concorrência de bandwidth:** Validado experimentalmente com múltiplos flows simultâneos
+
+**Fatos confirmados sobre NetworkFlow:**
+
+1. **source/target:** Podem ser NetworkSwitch ou EdgeServer (padrão EdgeSimPy usa EdgeServer)
+2. **path:** Lista de NetworkSwitch objects incluindo endpoints
+3. **data_to_transfer:** Valor inteiro reduzido por `min(bandwidth.values())` a cada step
+4. **bandwidth:** Alocada via `max_min_fairness` (padrão do EdgeSimPy)
+5. **start/end:** Derivados de `schedule.steps + 1`
+6. **metadata:** Dicionário customizado, `type="layer"` e `type="service_state"` são tipos nativos
+7. **step() method:** Reduz `data_to_transfer` quando bandwidth alocada, marca como "finished" quando ≤ 0
+
+**Decisões arquiteturais:**
+
+1. **source:** `task.user.base_station.network_switch` (NetworkSwitch - ponto de entrada do User)
+2. **target:** `task.target_server` (EdgeServer - seguindo padrão EdgeSimPy)
+3. **path:** Calculado via `nx.shortest_path()` entre switches
+4. **data_to_transfer:** `task.data_size_mb * 1024` (hipótese operacional de KB)
+5. **metadata:** `{"type": "task_input", "task_id": task.task_id}`
+6. **tempo:** `transmission_time_s = (flow.end - flow.start) * simulator.tick_duration`
+
+**Arquivos criados:**
+
+1. **`src/integration/task_network_flow.py`** - Classe TaskNetworkFlow:
+   - `__init__(task, simulator)`: Valida Task e armazena referências
+   - `create_upload_flow()`: Cria e registra NetworkFlow para upload
+   - `update_transmission_metrics()`: Atualiza timestamps quando flow termina
+   - `get_flow_info()`: Retorna informações do flow para diagnóstico
+
+2. **`src/test_task_network_flow.py`** - Script de validação experimental:
+   - Cria Task com dados conhecidos (0.1 MB)
+   - Cria TaskNetworkFlow e inicia upload
+   - Executa simulação até conclusão
+   - Valida path, bandwidth, tempos e status
+
+3. **`src/diagnostico_networkflow_unidades.py`** - Script de diagnóstico de unidades:
+   - Investiga valores de ContainerLayer.size, NetworkLink.bandwidth, EdgeServer.disk
+   - Verifica tick_duration do Simulator
+   - Mostra path real entre User e EdgeServer
+
+4. **`src/test_networkflow_transfer.py`** - Script de teste de NetworkFlow:
+   - Testa endpoints (NetworkSwitch vs EdgeServer)
+   - Valida concorrência de bandwidth
+   - Verifica cálculo matemático de transmissão
+
+**Arquivos modificados:**
+
+1. **`src/integration/__init__.py`** - Adicionada exportação de TaskNetworkFlow
+
+**Experimento de validação:**
+
+**Configuração:**
+- Dataset: `sample_dataset2.json`
+- User: User_1 (BaseStation_4, NetworkSwitch_4)
+- Target EdgeServer: EdgeServer_2 (BaseStation_9, NetworkSwitch_9)
+- Task data_size: 0.1 MB (102.4 KB)
+- Tick duration: 1.0 segundo
+
+**Resultado obtido:**
+
+```
+=== CRIAÇÃO DO NETWORKFLOW ===
+Flow ID: 1
+Flow status: active
+Data to transfer: 102.4 KB
+Flow start: 1
+Path: [4, 3, 2, 5, 9]
+Source: NetworkSwitch 4
+Target: EdgeServer 2
+
+=== TRANSMISSÃO ===
+Step 1: data_to_transfer = 89.9 KB, bandwidth = 12.5 KB/tick por link
+Step 2: data_to_transfer = 77.4 KB
+...
+Step 8: data_to_transfer = 2.4 KB
+Step 9: data_to_transfer = 0 KB, status = finished
+
+=== RESULTADOS ===
+Flow end: 9
+Transmission time (steps): 8
+Transmission time (seconds): 8.0s
+Task status: TRANSMITTING
+```
+
+**Validações (4/4 passaram):**
+
+- [OK] Flow terminou com sucesso
+- [OK] Task status em TRANSMITTING
+- [OK] Transmission time calculado: 8.0s
+- [OK] Duração coerente: 8 steps
+
+**Fatos confirmados experimentalmente:**
+
+1. **TaskNetworkFlow cria NetworkFlow válido** ✅
+   - Flow registrado corretamente no simulador
+   - Path calculado com NetworkX shortest_path
+   - Bandwidth alocada via max_min_fairness
+
+2. **Transmissão de dados funciona** ✅
+   - 102.4 KB transferidos em 8 steps
+   - Bandwidth efetiva: 12.5 KB/tick por link
+   - Comportamento determinístico e previsível
+
+3. **Task status management funciona** ✅
+   - Task mudou para TRANSMITTING corretamente
+   - Timestamps registrados corretamente
+
+4. **Cálculo de tempo funciona** ✅
+   - transmission_time_s = (9-1) * 1.0 = 8.0 segundos
+   - Coerente com relógio do EdgeSimPy
+
+5. **Metadata não interfere** ✅
+   - `{"type": "task_input", "task_id": ...}` funcionou sem conflitos
+   - Não interferiu com handlers nativos de layer/service_state
+
+**Hipóteses ainda não comprovadas:**
+
+1. **Unidade KB é universal do EdgeSimPy** - A conversão MB→KB é uma hipótese operacional baseada nos valores do dataset sample_dataset2.json. Não há documentação explícita confirmando KB como unidade universal.
+
+2. **Comportamento com concorrência real de TaskNetworkFlow** - O teste foi com flow único. A concorrência foi validada anteriormente com flows genéricos, mas não especificamente com TaskNetworkFlow.
+
+**Código principal da abstração:**
+
+```python
+class TaskNetworkFlow:
+    """Manages NetworkFlow creation for Task upload to EdgeServer."""
+
+    def create_upload_flow(self) -> NetworkFlow:
+        """Create and register a NetworkFlow for Task upload."""
+        # Identificar endpoints
+        source_switch = self.task.user.base_station.network_switch
+        target_server = self.task.target_server
+        target_switch = target_server.base_station.network_switch
+
+        # Calcular path
+        path = nx.shortest_path(
+            G=self.simulator.topology,
+            source=source_switch,
+            target=target_switch,
+            weight="delay",
+            method="dijkstra",
+        )
+
+        # Converter MB para KB (hipótese operacional)
+        data_to_transfer = self.task.data_size_mb * 1024
+
+        # Criar NetworkFlow
+        self.flow = NetworkFlow(
+            topology=self.simulator.topology,
+            source=source_switch,
+            target=target_server,
+            start=self.simulator.schedule.steps + 1,
+            path=path,
+            data_to_transfer=data_to_transfer,
+            metadata={"type": "task_input", "task_id": self.task.task_id},
+        )
+
+        # Registrar flow
+        self.simulator.initialize_agent(agent=self.flow)
+
+        # Atualizar estado da Task
+        self.task.status = TaskStatus.TRANSMITTING
+        self.task.transmission_start_time_s = (
+            self.flow.start * self.simulator.tick_duration
+        )
+
+        return self.flow
+```
+
+**Demonstração dos objetivos:**
+
+1. **Task → upload NetworkFlow → EdgeServer funciona ✅**
+   - TaskNetworkFlow criou flow válido
+   - Path correto entre switches [4, 3, 2, 5, 9]
+   - Transmissão completou com sucesso
+   - EdgeServer recebeu os dados (target)
+
+2. **Path válido ✅**
+   - NetworkX shortest_path retornou path funcional
+   - Todos os links têm bandwidth alocada
+   - Flow atravessou topologia corretamente
+
+3. **Transmissão efetiva ✅**
+   - 102.4 KB transferidos em 8 steps
+   - Bandwidth consistente (12.5 KB/tick)
+   - Comportamento determinístico
+
+4. **Tempo coerente com relógio EdgeSimPy ✅**
+   - transmission_time_s = 8.0s
+   - Derivado de (9-1) * 1.0 tick_duration
+   - Usa relógio mestre do EdgeSimPy
+
+**Restrições respeitadas:**
+
+1. Não modificar código-fonte do EdgeSimPy ✅
+2. Não alterar sample_dataset2.json ✅
+3. Não alterar Task ou TaskScheduler ✅
+4. Não integrar upload à execução ainda ✅
+5. Não implementar download ✅
+6. Não implementar Cloud ✅
+7. Não implementar ML ✅
+8. Não implementar mobilidade ✅
+
+**Especificação para próxima integração com TaskScheduler:**
+
+**Fluxo proposto:**
+1. TaskScheduler deve mudar Task.status para QUEUED (como já faz)
+2. Antes de executar, verificar se Task tem data_size_mb > 0
+3. Se tiver dados para transmitir:
+   - Criar TaskNetworkFlow
+   - Chamar create_upload_flow()
+   - Monitorar flow.status até "finished"
+   - Chamar update_transmission_metrics()
+   - Só então mudar para EXECUTING e chamar TaskScheduler.submit_task()
+4. Se não tiver dados (data_size_mb = 0):
+   - Ir direto para execução atual
+
+**Modificações necessárias em TaskScheduler:**
+- Adicionar dependência de Simulator
+- Adicionar lógica de pré-condição de transmissão
+- Adicionar monitoramento de status de NetworkFlow
+- Possivelmente adicionar estado TRANSMITTING antes de QUEUED
+
+**Critério de sucesso para próxima fase:**
+Task → TaskNetworkFlow → upload → TaskScheduler → execução → completion
+
+com tempos coerentes: transmission_time_s + queue_time_s + execution_time_s = response_time_s
+
+**Arquivos alterados:**
+- Nenhum arquivo existente foi modificado (EdgeSimPy original não foi alterado)
+
+**Arquivos criados:**
+- `edgesimpy-simulation/src/integration/task_network_flow.py`
+- `edgesimpy-simulation/src/test_task_network_flow.py`
+- `edgesimpy-simulation/src/diagnostico_networkflow_unidades.py`
+- `edgesimpy-simulation/src/test_networkflow_transfer.py`
+
+A Fase 7 está validada e pronta para integração completa com TaskScheduler.
+
+---
+
+## 26. Fase 8: integração de offloading e comparação de destinos (05/09/2026)
+
+**Objetivo:** conectar uma decisão de offloading ao `target_server` de uma
+`Task` e medir as consequências de destinos Edge diferentes usando o pipeline
+já validado de comunicação e execução.
+
+**Contexto metodológico:**
+
+Esta etapa não portou as estratégias C# para Python e não usou ML. A decisão
+foi mantida independente da infraestrutura:
+
+```text
+Task -> OffloadingPolicy -> target_server -> TaskNetworkFlow
+       -> Network -> TaskScheduler -> execução
+```
+
+A política escolhe o servidor candidato. A infraestrutura existente executa a
+decisão. Não foram alterados o código-fonte do EdgeSimPy, o dataset oficial,
+o `TaskScheduler` ou os algoritmos de placement de Services.
+
+### Investigação antes da implementação
+
+Não existia uma abstração Python equivalente à interface C# `IOffloadingStrategy`.
+As policies Python existentes (`LatencyAwarePlacement` e
+`ResourceAwarePlacement`) decidem placement de `Service`, não offloading de
+Tasks, e por isso não foram reutilizadas para essa responsabilidade.
+
+No lado C#, foram confirmadas as estratégias já existentes:
+
+- `RandomDecisionStrategy`;
+- `FixedRuleStrategy`;
+- `SimpleHeuristicStrategy`;
+- `WisardStrategy`;
+- `MlpStrategy`.
+
+Nesta fase foram implementadas somente baselines determinísticas mínimas para
+validar o pipeline independente de avaliação.
+
+### Arquivos criados ou modificados
+
+- [policies/offloading.py](../edgesimpy-simulation/src/policies/offloading.py):
+   `OffloadingPolicy`, `FixedServerPolicy`, `NearestServerPolicy` e
+   `RandomPolicy`;
+- [policies/__init__.py](../edgesimpy-simulation/src/policies/__init__.py):
+   exportação das políticas;
+- [experimento_offloading_destinos.py](../edgesimpy-simulation/src/experimento_offloading_destinos.py):
+   experimento controlado com seis destinos;
+- [integration/task_scheduler_integration.py](../edgesimpy-simulation/src/integration/task_scheduler_integration.py):
+   tratamento do caso local em que User e EdgeServer compartilham o mesmo
+   NetworkSwitch.
+
+### Políticas implementadas
+
+**FixedServerPolicy:** recebe explicitamente um EdgeServer e o devolve se ele
+pertencer à lista de candidatos.
+
+**NearestServerPolicy:** calcula o caminho de menor delay entre
+`task.user.base_station.network_switch` e o switch do candidato usando
+`nx.shortest_path(..., weight="delay")`. A política não cria flows nem executa
+Tasks.
+
+**RandomPolicy:** escolhe um candidato com `random.Random(seed)`, mantendo um
+gerador próprio e comportamento reproduzível.
+
+### Experimento controlado
+
+Foi usada uma nova simulação para cada destino, porque o EdgeSimPy mantém
+registros globais de componentes (`_instances`, `_object_count`) e referência
+global ao modelo atual. Cada braço recarrega o dataset e não compartilha flows,
+filas ou demandas com os demais.
+
+**Configuração registrada:**
+
+- experiment ID: `offloading_destinations_sample2_v1`;
+- dataset: `tutorials/datasets/sample_dataset2.json`;
+- User: `1`;
+- destinos: EdgeServers `1` a `6`;
+- `data_size_mb = 0.1`;
+- `cpu_cycles = 1000`;
+- `required_memory_mb = 100`;
+- `processing_rate_cycles_per_second = 500`;
+- `tick_duration = 1.0s`;
+- bandwidth: `max_min_fairness`;
+- seed: `20260905`;
+- deadline: `10s`;
+- repetições: `1` por destino.
+
+Comando executado:
+
+```powershell
+cd edgesimpy-simulation
+.venv\Scripts\python.exe src\experimento_offloading_destinos.py
+```
+
+### Resultados observados
+
+| Destino | Path | Hops | Delay | Transmissão | Fila | Execução | Conclusão | Deadline |
+|---|---|---:|---:|---:|---:|---:|---:|---|
+| EdgeServer 1 | 4-3-2-1 | 3 | 15 | 8s | 0s | 2s | 11s | violada |
+| EdgeServer 2 | 4-3-2-5-9 | 4 | 20 | 8s | 0s | 2s | 11s | violada |
+| EdgeServer 3 | 4 | 0 | 0 | 0s | 0s | 2s | 2s | cumprida |
+| EdgeServer 4 | 4-3-6-10-13 | 4 | 20 | 8s | 0s | 2s | 11s | violada |
+| EdgeServer 5 | 4-8 | 1 | 5 | 8s | 0s | 2s | 11s | violada |
+| EdgeServer 6 | 4-7-12 | 2 | 10 | 8s | 0s | 2s | 11s | violada |
+
+O `NearestServerPolicy` escolheu o EdgeServer 3, que está no mesmo switch do
+User 1. O `RandomPolicy`, com seed `20260905`, escolheu o EdgeServer 5; duas
+instâncias com a mesma seed produziram a mesma escolha.
+
+### Caso local sem hops
+
+O EdgeServer 3 revelou um caso de infraestrutura que não havia sido tratado na
+integração anterior: o caminho possui zero enlaces. O `NetworkFlow` do
+EdgeSimPy 1.1.0 não suporta esse caso porque seu `step()` chama `min()` sobre
+as bandas dos enlaces, e a lista fica vazia.
+
+A integração passou a tratar esse cenário como transmissão de duração zero:
+
+- `transmission_start_time_s = current_time_s`;
+- `transmission_end_time_s = current_time_s`;
+- nenhuma instância de `NetworkFlow` é criada;
+- a Task segue para a fila normal do `TaskScheduler`.
+
+Isso preserva a semântica física do acesso local sem modificar o EdgeSimPy.
+
+### Interpretação e limitação
+
+O experimento demonstrou que mudar o destino altera o resultado: o servidor
+local terminou em `2s` e cumpriu a deadline, enquanto os cinco destinos remotos
+terminaram em `11s` e violaram a deadline de `10s`.
+
+Entretanto, o atraso de caminho não alterou diretamente a duração do
+`NetworkFlow`. No EdgeSimPy 1.1.0, o progresso do flow é calculado apenas por
+`data_to_transfer -= min(bandwidth.values())` a cada tick. Assim, os destinos
+remotos tiveram a mesma transmissão de `8s`, embora possuam delays e números de
+hops diferentes. O delay e o path foram registrados como métricas, mas não
+devem ser interpretados como latência temporal completa da Task nesta versão.
+
+Essa é uma limitação metodológica importante para a próxima etapa: será
+necessário decidir, com experimento separado, se o atraso deve ser modelado por
+uma extensão externa da Task ou por outra representação de comunicação, sem
+alterar silenciosamente a semântica do EdgeSimPy.
+
+### Validações executadas
+
+- experimento de seis destinos: concluído com sucesso;
+- validação de erros nos quatro arquivos Python modificados/criados: sem erros;
+- regressão de [test_task_scheduler_with_network.py](../edgesimpy-simulation/src/test_task_scheduler_with_network.py):
+   `10/10` validações passaram;
+- FIFO e `max_concurrent_tasks=1`: preservados;
+- relógio mestre: continua sendo `simulator.schedule.steps * tick_duration`;
+- busy waiting: não introduzido;
+- Cloud, download, ML, mobilidade e fairness nova: não implementados.
+
+### Hipóteses ainda não validadas
+
+1. A conversão `data_size_mb * 1024` continua sendo uma hipótese operacional
+    de unidade para `data_to_transfer`.
+2. O `NetworkFlow` atual não representa atraso de propagação no tempo de
+    transmissão; a métrica `network_delay` ainda é observacional.
+3. O experimento usa uma única Task por destino, portanto não mede como a
+    escolha do servidor altera filas sob carga concorrente.
+4. A taxa de processamento de `500 cycles/s` continua sendo uma hipótese
+    externa, não uma propriedade de `EdgeServer.cpu`.
+5. As políticas ainda não combinam latência, capacidade, fila ou memória.
+
+### Próxima etapa recomendada
+
+Executar um experimento de carga com duas ou mais Tasks por destino, mantendo
+as mesmas configurações entre os braços e medindo fila, conclusão,
+throughput e deadline violation rate. Depois disso, avaliar uma política que
+use estado observável do ambiente, mantendo a decisão separada da execução.
+
+Não avançar automaticamente para ML, Cloud ou download.

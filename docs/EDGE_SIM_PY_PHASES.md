@@ -73,12 +73,27 @@ Status: completed (2026-08-28).
   (`src/diagnostico_task_scheduler.py`, `src/test_task_scheduler.py`).
 
 ## Phase 6 — Integrate TaskScheduler into the EdgeSimPy temporal cycle
+Status: completed (2026-09-04).
+
+- Implemented `TaskSchedulerIntegration` layer (`src/integration/task_scheduler_integration.py`)
+  that synchronizes TaskScheduler with EdgeSimPy's master clock
+- EdgeSimPy is the master clock (`schedule.time * tick_duration`)
+- TaskScheduler has no parallel clock and advances exactly once per tick
+- Integration via `resource_management_algorithm` (official EdgeSimPy mechanism)
+- Time is derived from EdgeSimPy and passed as parameter to TaskScheduler
+- Deterministic diagnostic with two Tasks on same EdgeServer
+- All 10 validations passed: synchronization, no parallel clock, once-per-tick,
+  correct temporal metrics, EdgeSimPy unmodified
+- Files created: `src/integration/__init__.py`, `src/integration/task_scheduler_integration.py`,
+  `src/diagnostico_integracao_task_scheduler.py`
+- No EdgeSimPy source files modified
+
+## Phase 7 — Extensions (NetworkFlow, Cloud, ML, mobility)
 Status: current / next.
 
-Goal: decide, implement incrementally, and validate by diagnostic how the
-Phase 5 `TaskScheduler` connects to the EdgeSimPy `Simulator.step()` /
-`DefaultScheduler` cycle — still without Task-level `NetworkFlow`, Cloud, ML,
-or full offloading.
+Goal: implement NetworkFlow for Task data transmission, Cloud, full offloading,
+ML policies, or other extensions, maintaining the same methodology of
+decision → implementation → diagnostic → validation.
 
 ## Deferred phases (do not start before Phase 6 is validated)
 
