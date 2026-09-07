@@ -3005,3 +3005,403 @@ features, tipos, labels, ausência de valores não finitos, ausência de
 features futuras, reprodutibilidade, disjunção dos splits e estatísticas.
 
 Nenhum treinamento, WiSARD, MLP, tuning ou novo dataset foi implementado.
+
+## 34. Fase 15: implementação do pipeline de ML (07/09/2026)
+
+**Objetivo:** implementar e avaliar modelos WiSARD e MLP no pipeline de Machine Learning, sem integrar ao EdgeSimPy e sem alterar o dataset.
+
+### Contexto metodológico
+
+A Fase 14 definiu o contrato de dados X/y e preparou o dataset reproduzível. A Fase 15 implementa os modelos de ML propriamente ditos, seguindo as decisões metodológicas estabelecidas:
+
+- Somente features do contrato atual (CpuCycles, TaskSizeMB, DeadlineMs, LatencySensitivity, RequiredMemoryMB)
+- Preprocessing ajustado apenas no conjunto de treinamento (sem leakage)
+- Sem tuning automático de hiperparâmetros
+- Sem uso do conjunto de teste para decisões de arquitetura
+- Sem integração ao EdgeSimPy nesta fase
+- Avaliação focada em métricas preditivas (accuracy, F1, confusion matrix)
+
+### Arquivos criados
+
+1. **`src/ml/preprocessing.py`** - Preprocessing leakage-aware:
+   - `MinMaxNormalizer`: normalização min-max ajustada apenas no treino
+   - `WiSARDEncoder`: quantização de features para bits (4 bits por feature)
+   - `NormalizationParams` e `WiSARDQuantizationParams`: rastreabilidade de parâmetros
+
+2. **`src/ml/wisard_model.py`** - Implementação WiSARD portada do C#:
+   - `WiSARDConfig`: bits_per_feature=4, ram_address_size=8, seed=7
+   - `WiSARDDiscriminator`: discriminador RAM para uma classe
+   - `WiSARDModel`: modelo completo com fit/predict
+   - Random mapping para endereços RAM, tie-breaking preferindo Edge
+
+3. **`src/ml/mlp_model.py`** - Implementação MLP portada do C#:
+   - `MLPConfig`: hidden_neurons=18, learning_rate=0.04, epochs=35, seed=11
+   - `MLPModel`: rede neural com uma camada oculta, ativação sigmoid
+   - Xavier initialization, backpropagation manual
+   - Binary cross-entropy loss
+
+4. **`src/ml/baseline.py`** - Baseline de maioria:
+   - `MajorityClassifier`: sempre prevê a classe majoritária do treino
+
+5. **`src/ml/metrics.py`** - Métricas de avaliação:
+   - `ClassificationMetrics`: accuracy, precision/recall/F1 por classe
+   - `compute_metrics()`: cálculo usando scikit-learn
+   - `format_metrics_table()`: formatação Markdown de resultados
+   - `format_config_table()`: formatação de configurações
+
+6. **`src/ml/train_models.py`** - Protocolo de treinamento:
+   - TRAIN → preprocessing fit → model fit
+   - VALIDATION → avaliação de métricas
+   - TEST → avaliação final
+   - Geração de relatório Markdown + JSON completo
+
+7. **`src/test_ml_models.py`** - Testes do pipeline:
+   - Dataset loading test
+   - Preprocessing leakage test
+   - WiSARD model test
+   - MLP model test
+   - Majority classifier test
+   - Metrics test
+   - Reproducibility test
+   - Test set untouched test
+
+### Ambiente e dependências
+
+- scikit-learn 1.9.0 instalado
+- requirements.txt atualizado com `scikit-learn>=1.9.0`
+- Nenhuma dependência WiSARD externa (implementação própria)
+
+### Resultados do treinamento
+
+**Dataset:**
+- Total: 15.000 amostras
+- Train: 10.500 (70%)
+- Validation: 2.250 (15%)
+- Test: 2.250 (15%)
+- Edge: 9.362 (62.4%)
+- Cloud: 5.638 (37.6%)
+
+**Test Set Performance:**
+
+| Modelo   | Accuracy | Precision Edge | Recall Edge | F1 Edge | Precision Cloud | Recall Cloud | F1 Cloud |
+| -------- | -------: | -------------: | ----------: | ------: | --------------: | -----------: | -------: |
+| MLP      | 0.7436   | 0.7794         | 0.8221      | 0.8001  | 0.6745          | 0.6130       | 0.6423   |
+| Majority | 0.6244   | 0.6244         | 1.0000      | 0.7688  | 0.0000          | 0.0000       | 0.0000   |
+| WiSARD   | 0.6244   | 0.6244         | 1.0000      | 0.7688  | 0.0000          | 0.0000       | 0.0000   |
+
+**Configurações:**
+
+| Modelo | Seed | Preprocessing | Principais hiperparâmetros |
+| ------ | ---: | ------------- | -------------------------- |
+| MLP    | 11   | min-max normalization | hidden_neurons=18, learning_rate=0.04, epochs=35 |
+| Majority | None | none |  |
+| WiSARD | 7    | min-max normalization | bits_per_feature=4, ram_address_size=8 |
+
+### Confusion Matrices (Test Set)
+
+**MLP:**
+|                | Predicted Edge | Predicted Cloud |
+|----------------|---------------:|---------------:|
+| Actual Edge    | 1155           | 250            |
+| Actual Cloud   | 327            | 518            |
+
+**Majority e WiSARD:**
+|                | Predicted Edge | Predicted Cloud |
+|----------------|---------------:|---------------:|
+| Actual Edge    | 1405           | 0              |
+| Actual Cloud   | 845            | 0              |
+
+### Análise dos resultados
+
+**MLP:**
+- Atingiu 74.36% de accuracy (19% de melhoria relativa sobre baseline)
+- Aprendeu a prever ambas as classes (1482 Edge, 768 Cloud)
+- F1 Edge: 0.80, F1 Cloud: 0.64 (performance balanceada)
+- Erro rate de 25.6% indica room for improvement
+
+**WiSARD:**
+- Colapsou para comportamento de maioria (sempre prevê Edge)
+- Indica que quantização (4 bits) e ram_address_size (8) são insuficientes
+- Necessita tuning de hiperparâmetros para ser competitivo
+
+**Majority Classifier:**
+- 62.44% accuracy reflete o desbalanceamento do dataset
+- F1 Cloud = 0 porque nunca prevê a classe minoritária
+- Serve como baseline para avaliar se ML realmente aprende
+
+### Limitações metodológicas
+
+**Circularidade:**
+- Labels foram gerados pelo simulador analítico C# (`label_source = "analytical_simulator"`)
+- Alta accuracy significa "o modelo aprendeu a fórmula analítica", não "o modelo é inteligente"
+- MLP aprende a reproduzir o critério analítico, não necessariamente generaliza para cenários reais
+
+**Dataset:**
+- Moderadamente desbalanceado (62.4% Edge vs 37.6% Cloud)
+- Não há rótulos por EdgeServer específico (somente Edge/Cloud)
+- `path_delay_ms` e `admitted_task_count` não estão no dataset atual
+
+**Modelos:**
+- WiSARD falhou completamente com configuração atual
+- MLP não teve tuning de hiperparâmetros
+- Não foi feita análise de feature importance
+- Não foi investigada a complexidade da fronteira de decisão
+
+### Validações
+
+- Testes do pipeline: 8/8 passaram
+- Preprocessing leakage: validado (fit apenas no treino)
+- Reproducibilidade: validada (mesma seed → mesmo resultado)
+- Test set untouched: validado (disjunção de splits)
+- scikit-learn instalado: versão 1.9.0
+- requirements.txt atualizado
+
+### Regressões
+
+- `test_ml_dataset.py`: PASS
+- Todos os experimentos EdgeSimPy anteriores permanecem intactos
+- Nenhum arquivo em `edgesimpy-source/` foi alterado
+- Dataset CSV não foi modificado
+
+### Arquivos gerados
+
+- `results/ml_models_report.md`: relatório completo em Markdown
+- `results/ml_models_report.json`: resultados completos em JSON
+- `results/ml_analysis.md`: análise detalhada e discussão de circularidade
+
+### Próxima etapa recomendada
+
+**Investigação da fórmula analítica:**
+- Examinar `EdgeCloudSimulator.cs` para entender o que MLP realmente aprendeu
+- Investigar se há regiões de decisão triviais que explicam alta accuracy
+- Analisar amostras mal classificadas para entender ambiguidades
+
+**Melhoria do WiSARD:**
+- Tuning de `bits_per_feature` (atual 4 → testar 8, 16)
+- Tuning de `ram_address_size` (atual 8 → testar 16, 32)
+- Diferentes estratégias de tie-breaking
+
+**Integração futura:**
+- Conectar modelos ao EdgeSimPy para avaliação sistêmica
+- Métricas principais: deadline violation rate, latência, throughput
+- Accuracy/F1 como métricas secundárias
+
+**Não avançar automaticamente para:**
+- Cloud no EdgeSimPy
+- Download de resultados
+- Tuning automático de hiperparâmetros
+- Seleção de features baseada no test
+
+A Fase 15 está concluída com pipeline ML funcional, resultados documentados e limitações metodológicas explicitadas.
+
+## 35. Auditoria metodológica da fórmula analítica (07/09/2026)
+
+**Objetivo:** reconstruir e auditar a função analítica que gera `BestDestination` no simulador C#, sem implementar tuning ou integração ao EdgeSimPy.
+
+### Motivação
+
+A Fase 15 implementou o pipeline ML com resultados:
+- MLP: 74.36% accuracy
+- WiSARD: 62.44% (colapso para maioria)
+- Majority: 62.44% (baseline)
+
+No entanto, os labels são gerados pelo simulador analítico C#. A pergunta metodológica é:
+
+> O que exatamente o modelo está tentando aprender?
+
+### Fórmulas reconstruídas do EdgeCloudSimulator
+
+**Fatores de CPU:**
+```text
+edge_cpu_factor = 1.0 + EdgeCpuUsagePercent / 100.0
+cloud_cpu_factor = 1.0 + CloudCpuUsagePercent / 180.0
+```
+
+**Penalidade de memória (apenas Edge):**
+```text
+available_edge_memory = 8192.0 * (1.0 - EdgeMemoryUsagePercent / 100.0)
+if RequiredMemoryMB > available_edge_memory:
+    memory_penalty = 1.35 + (RequiredMemoryMB - available_edge_memory) / 4096.0
+else:
+    memory_penalty = 1.0
+```
+
+**Tempo de execução:**
+```text
+ExecutionTimeEdge = CpuCycles / 12_000_000 * edge_cpu_factor * memory_penalty
+ExecutionTimeCloud = CpuCycles / 60_000_000 * cloud_cpu_factor
+```
+
+**Delays de fila:**
+```text
+edge_queue_delay = EdgeQueueSize * (18.0 + EdgeCpuUsagePercent * 0.45)
+cloud_queue_delay = CloudQueueSize * (10.0 + CloudCpuUsagePercent * 0.22)
+```
+
+**Upload e rede:**
+```text
+upload_ms = TaskSizeMB * 8.0 / max(BandwidthMbps, 0.1) * 1000.0
+network_penalty = NetworkLatencyMs * (1.0 + LatencySensitivity)
+```
+
+**Tempo total:**
+```text
+TotalResponseTimeEdge = ExecutionTimeEdge + edge_queue_delay
+TotalResponseTimeCloud = ExecutionTimeCloud + cloud_queue_delay + upload_ms + network_penalty
+```
+
+**Decisão:**
+```text
+BestDestination = Edge  se TotalResponseTimeEdge < TotalResponseTimeCloud
+                Cloud caso contrário
+```
+
+### Mapeamento Feature → Fórmula
+
+| Feature            | T_edge | T_cloud | Papel |
+| ------------------ | ------ | ------- | ----- |
+| CpuCycles          | ✅     | ✅      | Divisão (base) |
+| TaskSizeMB         | ❌     | ✅      | Upload |
+| DeadlineMs         | ❌     | ❌      | Avaliação posterior (não entra na fórmula) |
+| LatencySensitivity | ❌     | ✅      | Rede |
+| RequiredMemoryMB   | ✅     | ❌      | Penalidade (condicional) |
+| EdgeCpuUsagePercent | ✅    | ❌      | Fator |
+| EdgeMemoryUsagePercent | ✅ | ❌      | Disponibilidade |
+| EdgeQueueSize       | ✅     | ❌      | Fila |
+| BandwidthMbps      | ❌     | ✅      | Upload |
+| NetworkLatencyMs   | ❌     | ✅      | Rede |
+| CloudCpuUsagePercent | ❌    | ✅      | Fator |
+| CloudQueueSize     | ❌     | ✅      | Fila |
+
+**Observação crítica:** `DeadlineMs` não entra na fórmula de decisão - é usado apenas para avaliação posterior.
+
+### Fronteira de decisão
+
+```text
+D(X) = T_edge(X) - T_cloud(X)
+
+D(X) < 0  → Edge
+D(X) >= 0 → Cloud
+```
+
+### Distribuição dos labels (15.000 amostras)
+
+```text
+Edge: 9.362 (62.41%)
+Cloud: 5.638 (37.59%)
+Empates exatos: 0
+```
+
+### Estatísticas da diferença (T_edge - T_cloud)
+
+```text
+Média: -12.403 ms (negativo = Edge mais rápido em média)
+Mediana: -428.43 ms
+Mínimo: -530.974 ms
+Máximo: 3.742 ms
+Desvio padrão: 42.617 ms
+```
+
+### Amostras próximas da fronteira
+
+```text
+|diff| < 10ms: 93 amostras (0.62%)
+```
+
+**Interpretação:** A Edge é favorecida em média pela fórmula. Apenas 0.62% das amostras estão muito próximas da fronteira, indicando que o espaço de features é relativamente bem separado.
+
+### Por que 62.4% Edge?
+
+1. **Vantagem estrutural da Edge:** não paga upload nem penalidade de rede
+2. **Capacidade CPU:** 12M cycles/ms é suficiente para maioria das Tasks
+3. **Upload custoso:** TaskSizeMB * 8 / BandwidthMbps pode ser significativo
+4. **Penalidade de rede:** NetworkLatencyMs * (1 + LatencySensitivity) adiciona custo
+5. **Apenas 37.6% Cloud:** quando upload + rede + fila Cloud compensam a vantagem de capacidade
+
+### Análise do MLP
+
+**Confusion Matrix (Test Set):**
+```
+                Predicted Edge   Predicted Cloud
+Actual Edge           1155              250
+Actual Cloud           327              518
+```
+
+**Erros por classe:**
+- Edge → Cloud: 250 de 1.405 (17.8%)
+- Cloud → Edge: 327 de 845 (38.7%)
+
+**Interpretação:**
+- A classe Cloud é mais difícil de prever (38.7% vs 17.8%)
+- O MLP tem tendência a prever Edge demais (viés para classe majoritária)
+- Apenas 0.62% das amostras estão próximas da fronteira, então os erros não são explicados por ambiguidade
+
+### Análise do WiSARD
+
+**Configuração atual:**
+- bits_per_feature = 4
+- ram_address_size = 8
+- seed = 7
+
+**Por que colapso para Majority?**
+
+1. **Quantização grosseira:** 4 bits = 16 níveis por feature, perda de informação granular
+2. **Representação binária limitada:** 5 features → 20 bits totais, poucas RAMs
+3. **Discriminadores insuficientes:** 2 discriminadores com pouca capacidade
+4. **Tie-breaking:** Preferência por Edge em empates
+5. **Distribuição desbalanceada:** 62.4% Edge favorece discriminador Edge
+
+**Conclusão:** A configuração atual é incapaz de representar adequadamente a fronteira analítica. Não é apenas subparametrizada - a representação é insuficiente.
+
+### Circularidade metodológica
+
+**Cadeia de circularidade:**
+```text
+OffloadingSample → EdgeCloudSimulator → T_edge/T_cloud → BestDestination → X/y → MLP/WiSARD
+```
+
+**Onde ocorre:**
+- Os labels são gerados pela mesma fórmula usada para avaliação
+- O modelo aprende a reproduzir a fórmula, não a física real
+- Alta accuracy não significa generalização para ambientes reais
+
+**Diferença entre generalizações:**
+- **Para novas amostras do simulador:** MLP pode generalizar bem
+- **Para ambiente físico real:** Requer validação independente (EdgeSimPy)
+
+### Conclusões
+
+1. **DeadlineMs é redundante** para a decisão de offloading - não entra na fórmula
+2. **Edge é favorecida pela fórmula** devido a vantagem estrutural (sem upload/rede)
+3. **MLP aprendeu parcialmente a fórmula** (74.36% accuracy) com erro não explicado por ambiguidade
+4. **WiSARD colapsou por representação insuficiente** (quantização grosseira)
+5. **Circularidade é metodológica** - modelos aprendem a fórmula, não física real
+6. **Validação independente necessária** - EdgeSimPy com métricas sistêmicas
+
+### Arquivos criados
+
+- `src/analise_formula_analitica.py` - Script de auditoria da fórmula
+- `results/auditoria_formula_analitica.md` - Relatório completo da auditoria
+
+### Validações
+
+- Fórmula reconstruída exatamente do código C#
+- Dataset analisado com fórmula reconstruída
+- Distribuição confirmada (62.41% Edge)
+- Nenhum novo treinamento realizado
+- Nenhum arquivo existente modificado
+
+### Próxima etapa recomendada
+
+**NÃO fazer ainda:**
+- Tuning de WiSARD
+- Tuning de MLP
+- Integração ao EdgeSimPy
+
+**RECOMENDADO:**
+1. Investigar Feature Importance do MLP atual
+2. Testar simplificação do feature set (remover DeadlineMs)
+3. Preparar experimento de validação no EdgeSimPy com MLP fixo
+4. Avaliar métricas sistêmicas (deadline violation, latência) vs accuracy
+
+A auditoria metodológica está concluída com fórmula reconstruída, distribuição analisada e circularidade formalizada.

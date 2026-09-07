@@ -1,0 +1,302 @@
+{
+  "dataset_info": {
+    "metadata": {
+      "dataset_version": "csharp-analytical-v1",
+      "source_path": "C:\\Users\\Antonny\\Repositorio\\EdgeCloudOffloadingTcc\\Dataset\\dataset.csv",
+      "source_seed": 42,
+      "split_seed": 43,
+      "label_source": "analytical_simulator",
+      "feature_names": [
+        "CpuCycles",
+        "TaskSizeMB",
+        "DeadlineMs",
+        "LatencySensitivity",
+        "RequiredMemoryMB"
+      ],
+      "omitted_features": [
+        "BestDestination",
+        "ExecutionTimeCloud",
+        "ExecutionTimeEdge",
+        "TotalResponseTimeCloud",
+        "TotalResponseTimeEdge",
+        "admitted_task_count",
+        "completion_time",
+        "completion_time_s",
+        "deadline_violation",
+        "path_delay_ms",
+        "queue_time",
+        "queue_time_s"
+      ],
+      "sample_count": 15000
+    },
+    "feature_statistics": {
+      "CpuCycles": {
+        "min": 50482656.59738,
+        "max": 7999928503.13425,
+        "mean": 4022296472.1240506
+      },
+      "TaskSizeMB": {
+        "min": 0.1,
+        "max": 149.99117,
+        "mean": 20.073047388
+      },
+      "DeadlineMs": {
+        "min": 50.76006,
+        "max": 5999.99049,
+        "mean": 3019.048273912
+      },
+      "LatencySensitivity": {
+        "min": 1e-05,
+        "max": 0.99991,
+        "mean": 0.50287588
+      },
+      "RequiredMemoryMB": {
+        "min": 64.13169,
+        "max": 6143.7911,
+        "mean": 3111.9217952706667
+      }
+    },
+    "sizes": {
+      "all": 15000,
+      "train": 10500,
+      "validation": 2250,
+      "test": 2250
+    },
+    "class_counts": {
+      "all": {
+        "Cloud": 5638,
+        "Edge": 9362
+      },
+      "train": {
+        "Edge": 6553,
+        "Cloud": 3947
+      },
+      "validation": {
+        "Edge": 1404,
+        "Cloud": 846
+      },
+      "test": {
+        "Cloud": 845,
+        "Edge": 1405
+      }
+    }
+  },
+  "models": {
+    "Majority": {
+      "validation": {
+        "accuracy": 0.624,
+        "precision_edge": 0.624,
+        "recall_edge": 1.0,
+        "f1_edge": 0.7684729064039408,
+        "precision_cloud": 0.0,
+        "recall_cloud": 0.0,
+        "f1_cloud": 0.0,
+        "confusion_matrix": [
+          [
+            1404,
+            0
+          ],
+          [
+            846,
+            0
+          ]
+        ],
+        "prediction_distribution": {
+          "Edge": 2250
+        }
+      },
+      "test": {
+        "accuracy": 0.6244444444444445,
+        "precision_edge": 0.6244444444444445,
+        "recall_edge": 1.0,
+        "f1_edge": 0.7688098495212038,
+        "precision_cloud": 0.0,
+        "recall_cloud": 0.0,
+        "f1_cloud": 0.0,
+        "confusion_matrix": [
+          [
+            1405,
+            0
+          ],
+          [
+            845,
+            0
+          ]
+        ],
+        "prediction_distribution": {
+          "Edge": 2250
+        }
+      }
+    },
+    "WiSARD": {
+      "validation": {
+        "accuracy": 0.624,
+        "precision_edge": 0.624,
+        "recall_edge": 1.0,
+        "f1_edge": 0.7684729064039408,
+        "precision_cloud": 0.0,
+        "recall_cloud": 0.0,
+        "f1_cloud": 0.0,
+        "confusion_matrix": [
+          [
+            1404,
+            0
+          ],
+          [
+            846,
+            0
+          ]
+        ],
+        "prediction_distribution": {
+          "Edge": 2250
+        }
+      },
+      "test": {
+        "accuracy": 0.6244444444444445,
+        "precision_edge": 0.6244444444444445,
+        "recall_edge": 1.0,
+        "f1_edge": 0.7688098495212038,
+        "precision_cloud": 0.0,
+        "recall_cloud": 0.0,
+        "f1_cloud": 0.0,
+        "confusion_matrix": [
+          [
+            1405,
+            0
+          ],
+          [
+            845,
+            0
+          ]
+        ],
+        "prediction_distribution": {
+          "Edge": 2250
+        }
+      }
+    },
+    "MLP": {
+      "validation": {
+        "accuracy": 0.7502222222222222,
+        "precision_edge": 0.7915512465373962,
+        "recall_edge": 0.8141025641025641,
+        "f1_edge": 0.8026685393258427,
+        "precision_cloud": 0.6761786600496278,
+        "recall_cloud": 0.6442080378250591,
+        "f1_cloud": 0.6598062953995157,
+        "confusion_matrix": [
+          [
+            1143,
+            261
+          ],
+          [
+            301,
+            545
+          ]
+        ],
+        "prediction_distribution": {
+          "Edge": 1444,
+          "Cloud": 806
+        }
+      },
+      "test": {
+        "accuracy": 0.7435555555555555,
+        "precision_edge": 0.7793522267206477,
+        "recall_edge": 0.8220640569395018,
+        "f1_edge": 0.800138552130239,
+        "precision_cloud": 0.6744791666666666,
+        "recall_cloud": 0.6130177514792899,
+        "f1_cloud": 0.6422814631122132,
+        "confusion_matrix": [
+          [
+            1155,
+            250
+          ],
+          [
+            327,
+            518
+          ]
+        ],
+        "prediction_distribution": {
+          "Cloud": 768,
+          "Edge": 1482
+        }
+      }
+    }
+  },
+  "configurations": {
+    "Majority": {
+      "seed": null,
+      "preprocessing": "none",
+      "hyperparameters": {}
+    },
+    "WiSARD": {
+      "seed": 7,
+      "preprocessing": "min-max normalization",
+      "hyperparameters": {
+        "bits_per_feature": 4,
+        "ram_address_size": 8,
+        "seed": 7
+      },
+      "preprocessing_params": {
+        "normalization": {
+          "feature_names": [
+            "CpuCycles",
+            "TaskSizeMB",
+            "DeadlineMs",
+            "LatencySensitivity",
+            "RequiredMemoryMB"
+          ],
+          "mins": [
+            50482656.59738,
+            0.1,
+            51.62012,
+            1e-05,
+            64.17229
+          ],
+          "maxs": [
+            7999928503.13425,
+            149.99117,
+            5999.99049,
+            0.99983,
+            6143.2231
+          ]
+        },
+        "bits_per_feature": 4,
+        "total_bits": 20
+      }
+    },
+    "MLP": {
+      "seed": 11,
+      "preprocessing": "min-max normalization",
+      "hyperparameters": {
+        "hidden_neurons": 18,
+        "learning_rate": 0.04,
+        "epochs": 35,
+        "seed": 11
+      },
+      "preprocessing_params": {
+        "feature_names": [
+          "CpuCycles",
+          "TaskSizeMB",
+          "DeadlineMs",
+          "LatencySensitivity",
+          "RequiredMemoryMB"
+        ],
+        "mins": [
+          50482656.59738,
+          0.1,
+          51.62012,
+          1e-05,
+          64.17229
+        ],
+        "maxs": [
+          7999928503.13425,
+          149.99117,
+          5999.99049,
+          0.99983,
+          6143.2231
+        ]
+      }
+    }
+  }
+}
