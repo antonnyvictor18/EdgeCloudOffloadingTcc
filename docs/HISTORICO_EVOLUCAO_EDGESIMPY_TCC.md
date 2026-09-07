@@ -2,7 +2,7 @@
 
 Este documento registra o caminho percorrido no projeto ate 4 de setembro de 2026: descobertas, decisoes arquiteturais, experimentos, resultados e pontos pendentes.
 
-Para o contexto de continuidade resumido (status por fase, regras de ouro, ponto exato de retomada), ver [CONTEXTO_MESTRE_EDGESIMPY_TCC.md](CONTEXTO_MESTRE_EDGESIMPY_TCC.md). A Fase 6 (integracao do TaskScheduler ao ciclo temporal do EdgeSimPy) foi concluida na secao 24 abaixo; a comunicacao de Tasks via NetworkFlow e sua integracao com o TaskScheduler foram concluidas nas secoes 25 e 26; a proxima etapa e conectar baselines de offloading a experimentos controlados.
+Para o contexto de continuidade resumido (status por fase, regras de ouro, ponto exato de retomada), ver [CONTEXTO_MESTRE_EDGESIMPY_TCC.md](CONTEXTO_MESTRE_EDGESIMPY_TCC.md). A Fase 6 (integracao do TaskScheduler ao ciclo temporal do EdgeSimPy) foi concluida na secao 24 abaixo; a comunicacao de Tasks via NetworkFlow, sua integracao com o TaskScheduler e as metricas de comunicacao foram concluidas nas secoes 25, 26 e 27; a proxima etapa e avaliar carga e filas com multiplas Tasks.
 
 ## 1. Ponto de partida
 
@@ -2075,3 +2075,821 @@ throughput e deadline violation rate. Depois disso, avaliar uma política que
 use estado observável do ambiente, mantendo a decisão separada da execução.
 
 Não avançar automaticamente para ML, Cloud ou download.
+
+## 30. Fase 12: heurística híbrida de rede e carga (07/09/2026)
+
+**Objetivo:** avaliar uma política intermediária entre escolher somente o
+menor atraso de rede e escolher somente a menor contagem de Tasks admitidas.
+
+### Estudo de projeto
+
+As informações confiáveis no momento da decisão são:
+
+- `path_delay_ms`, calculado entre User e cada EdgeServer candidato;
+- caminho e número de hops;
+- número de Tasks já admitidas pela política na rodada atual.
+
+Não foram usados como carga:
+
+- `completion_time_s`;
+- `queue_time_s` futuro;
+- `deadline_violation`;
+- utilização futura de CPU ou RAM;
+- resultados de execuções anteriores.
+
+O EdgeSimPy não mantém uma fila nativa de Tasks nem uma métrica de execução
+temporária adequada para esta política. A contagem de admissões continua sendo
+um estado estático inicial do modelo do TCC.
+
+### Formulação escolhida antes da execução
+
+Foi implementada `HybridHeuristicPolicy` em
+[policies/offloading.py](../edgesimpy-simulation/src/policies/offloading.py).
+
+Para os candidatos da decisão, são calculados:
+
+```text
+delay_normalized(s) = (delay(s) - min(delay)) /
+                                 (max(delay) - min(delay))
+
+load_normalized(s) = (admissions(s) - min(admissions)) /
+                              (max(admissions) - min(admissions))
+
+cost(s) = 0.5 * delay_normalized(s)
+            + 0.5 * load_normalized(s)
+```
+
+Quando todos os candidatos possuem o mesmo valor de uma variável, sua
+normalização é zero para todos. Empates finais são resolvidos pelo menor ID do
+servidor.
+
+Os pesos iguais `0.5/0.5` foram definidos a priori, antes da execução. Eles
+não foram ajustados para melhorar resultados observados. A formulação foi
+inspirada apenas na ideia de custo ponderado existente no C#; não copia a
+fórmula de `SimpleHeuristicStrategy`, pois CPU, RAM, filas C# e Cloud não são
+observáveis validamente nesta camada Python.
+
+### Experimento
+
+Arquivo criado:
+
+- [experimento_heuristica_offloading.py](../edgesimpy-simulation/src/experimento_heuristica_offloading.py).
+
+Foram comparadas quatro políticas:
+
+- `RandomPolicy`;
+- `NearestServerPolicy`;
+- `LeastLoadedPolicy`;
+- `HybridHeuristicPolicy`.
+
+Foram mantidas as cargas `1`, `2`, `3`, `5` e `8` Tasks, com os mesmos
+parâmetros da matriz de robustez. Random usou as seeds `11`, `22`, `33`, `44`
+e `55`; as políticas determinísticas usaram a seed registrada `20260907`.
+Todas as decisões ocorreram em lote antes do primeiro tick.
+
+Comando executado:
+
+```powershell
+cd edgesimpy-simulation
+.venv\Scripts\python.exe src\experimento_heuristica_offloading.py
+```
+
+### Resultados agregados
+
+| Tasks | Política | Violações | Conclusão média | Máxima | Fila média | Transmissão média |
+|---:|---|---:|---:|---:|---:|---:|
+| 1 | Random | 0% | 11,0s | 11,0s | 0,0s | 8,0s |
+| 1 | Nearest | 0% | 11,0s | 11,0s | 0,0s | 8,0s |
+| 1 | LeastLoaded | 0% | 11,0s | 11,0s | 0,0s | 8,0s |
+| 1 | Hybrid | 0% | 11,0s | 11,0s | 0,0s | 8,0s |
+| 2 | Random | 40% | 18,2s | 21,0s | 0,8s | 14,4s |
+| 2 | Nearest | 50% | 20,0s | 21,0s | 1,0s | 16,0s |
+| 2 | LeastLoaded | 0% | 11,0s | 11,0s | 0,0s | 8,0s |
+| 2 | Hybrid | 0% | 11,0s | 11,0s | 0,0s | 8,0s |
+| 3 | Random | 73,3% | 24,2s | 31,0s | 1,47s | 19,73s |
+| 3 | Nearest | 100% | 29,0s | 31,0s | 2,0s | 24,0s |
+| 3 | LeastLoaded | 33,3% | 17,0s | 21,0s | 0,67s | 13,33s |
+| 3 | Hybrid | 33,3% | 17,0s | 21,0s | 0,67s | 13,33s |
+| 5 | Random | 80% | 28,28s | 41,0s | 1,92s | 23,36s |
+| 5 | Nearest | 100% | 47,0s | 51,0s | 4,0s | 40,0s |
+| 5 | LeastLoaded | 80% | 25,4s | 31,0s | 1,6s | 20,8s |
+| 5 | Hybrid | 80% | 25,4s | 31,0s | 1,6s | 20,8s |
+| 8 | Random | 95% | 42,8s | 62,0s | 3,5s | 36,3s |
+| 8 | Nearest | 100% | 75,0s | 82,0s | 7,0s | 65,0s |
+| 8 | LeastLoaded | 100% | 38,0s | 41,0s | 3,0s | 32,0s |
+| 8 | Hybrid | 100% | 38,0s | 41,0s | 3,0s | 32,0s |
+
+Neste cenário com dois candidatos, a Hybrid alternou as decisões entre E5 e
+E2 (`E5/E2/E5/...`) e produziu a mesma distribuição agregada de carga que a
+LeastLoaded (`E2/E5/E2/...`). Portanto, não houve benefício adicional
+observável da combinação de critérios, embora a política seja formalmente
+distinta e utilize rede e carga.
+
+### Conclusão metodológica
+
+1. Com pouca carga, todas as políticas empataram.
+2. Com congestionamento, combinar delay e admissões evitou a concentração do
+    Nearest neste cenário.
+3. A Hybrid não superou a LeastLoaded nas cargas testadas.
+4. A política não deve ser declarada superior em geral; os pesos ainda não
+    passaram por análise de sensibilidade.
+
+### Limitações e próxima etapa
+
+- normalização relativa aos candidatos pode produzir empates quando os valores
+   são iguais;
+- dois candidatos e uma User limitam a diversidade de decisões;
+- uma execução determinística por carga não permite inferência estatística
+   forte;
+- a carga continua sendo contagem de admissões, não utilização real de CPU/RAM;
+- a latência derivada permanece separada de `completion_time_s`;
+- não foi feita análise de sensibilidade dos pesos.
+
+Todas as regressões passaram: scheduler, destinos, múltiplas Tasks e robustez.
+Nenhum arquivo em `edgesimpy-source/` foi alterado.
+
+### Próxima etapa recomendada
+
+Executar uma análise de sensibilidade previamente planejada para pesos, por
+exemplo `(0.25, 0.75)`, `(0.5, 0.5)` e `(0.75, 0.25)`, com seeds e cargas
+fixadas. Essa análise deve ser tratada como experimento separado, sem escolher
+o melhor peso depois de observar os resultados.
+
+Não avançar automaticamente para ML, Cloud ou download.
+
+## 29. Fase 11: robustez das políticas sob diferentes cargas (07/09/2026)
+
+**Objetivo:** verificar se a diferença observada entre `NearestServerPolicy` e
+`LeastLoadedPolicy` dependia somente do cenário de três Tasks ou permanecia em
+outras cargas.
+
+### Desenho experimental
+
+Foi criado [experimento_robustez_politicas.py](../edgesimpy-simulation/src/experimento_robustez_politicas.py).
+Cada execução usa um `Simulator` novo e recarrega o dataset. As políticas
+comparadas foram mantidas sem alterações:
+
+- `RandomPolicy`;
+- `NearestServerPolicy`;
+- `LeastLoadedPolicy`.
+
+As Tasks são decididas em lote, antes de `Simulator.run_model()`. Portanto,
+`LeastLoadedPolicy` usa apenas as atribuições anteriores dentro da mesma rodada
+de decisão; não usa fila futura, completion, deadline violation ou resultados
+de outras execuções.
+
+**Variável alterada:** quantidade de Tasks: `1`, `2`, `3`, `5` e `8`.
+
+**Variáveis controladas:**
+
+- dataset `sample_dataset2.json`;
+- User 1;
+- candidatos EdgeServers 2 e 5;
+- `data_size_mb = 0.1`;
+- `cpu_cycles = 1000`;
+- `required_memory_mb = 100`;
+- deadline `20s`;
+- processing rate `500 cycles/s`;
+- `tick_duration = 1s`;
+- `max_min_fairness`;
+- ordem crescente de submissão;
+- `delay_unit = "ms"`.
+
+Para `RandomPolicy`, foram usadas cinco seeds: `11`, `22`, `33`, `44` e
+`55`. As políticas determinísticas usaram uma execução com seed registrada
+`20260907`. Os parâmetros das Tasks foram iguais entre políticas dentro de
+cada carga.
+
+Comando executado:
+
+```powershell
+cd edgesimpy-simulation
+.venv\Scripts\python.exe src\experimento_robustez_politicas.py
+```
+
+### Resultados agregados
+
+| Tasks | Política | Violações | Taxa | Conclusão média | P95 | Conclusão máxima | Fila média | Transmissão média |
+|---:|---|---:|---:|---:|---:|---:|---:|---:|
+| 1 | Random | 0/5 | 0% | 11,0s | n/a | 11,0s | 0,0s | 8,0s |
+| 1 | Nearest | 0/1 | 0% | 11,0s | n/a | 11,0s | 0,0s | 8,0s |
+| 1 | LeastLoaded | 0/1 | 0% | 11,0s | n/a | 11,0s | 0,0s | 8,0s |
+| 2 | Random | 4/10 | 40% | 18,2s | n/a | 21,0s | 0,8s | 14,4s |
+| 2 | Nearest | 1/2 | 50% | 20,0s | n/a | 21,0s | 1,0s | 16,0s |
+| 2 | LeastLoaded | 0/2 | 0% | 11,0s | n/a | 11,0s | 0,0s | 8,0s |
+| 3 | Random | 11/15 | 73,3% | 24,2s | 31,0s | 31,0s | 1,47s | 19,73s |
+| 3 | Nearest | 3/3 | 100% | 29,0s | n/a | 31,0s | 2,0s | 24,0s |
+| 3 | LeastLoaded | 1/3 | 33,3% | 17,0s | n/a | 21,0s | 0,67s | 13,33s |
+| 5 | Random | 20/25 | 80% | 28,28s | 39,0s | 41,0s | 1,92s | 23,36s |
+| 5 | Nearest | 5/5 | 100% | 47,0s | n/a | 51,0s | 4,0s | 40,0s |
+| 5 | LeastLoaded | 4/5 | 80% | 25,4s | n/a | 31,0s | 1,6s | 20,8s |
+| 8 | Random | 38/40 | 95% | 42,8s | 60,0s | 62,0s | 3,5s | 36,3s |
+| 8 | Nearest | 8/8 | 100% | 75,0s | n/a | 82,0s | 7,0s | 65,0s |
+| 8 | LeastLoaded | 8/8 | 100% | 38,0s | n/a | 41,0s | 3,0s | 32,0s |
+
+`RandomPolicy` agrega cinco execuções e, por isso, possui mais observações.
+Para `NearestServerPolicy` e `LeastLoadedPolicy`, há uma execução por carga.
+O P95 foi calculado somente quando havia pelo menos 20 observações; nos demais
+casos foi reportado como `n/a`.
+
+### Interpretação por regime de carga
+
+**Baixa carga, 1 Task:** as três políticas empataram neste cenário. Não houve
+contenção suficiente para diferenciar proximidade e distribuição.
+
+**Carga intermediária, 2 a 5 Tasks:** `NearestServerPolicy` concentrou as
+Tasks no E5 e apresentou maior transmissão, fila e conclusão. `LeastLoadedPolicy`
+distribuiu as atribuições entre E2 e E5 e reduziu as métricas agregadas. A
+diferença observada no cenário base de três Tasks permaneceu em 2, 3 e 5 Tasks.
+
+**Carga alta, 8 Tasks:** `LeastLoadedPolicy` ainda reduziu conclusão média,
+conclusão máxima, fila média e transmissão média em relação a Nearest, mas as
+duas políticas violaram todas as deadlines. Distribuir reduziu o impacto, mas
+não foi suficiente para cumprir a deadline escolhida.
+
+### Validações e regressões
+
+- cinco cargas executadas para cada política;
+- cinco seeds registradas para Random;
+- decisões feitas em lote antes da simulação;
+- mesmos parâmetros de Task dentro de cada carga;
+- simuladores isolados;
+- FIFO, `max_concurrent_tasks=1` e relógio EdgeSimPy preservados;
+- nenhuma Task executou antes do upload;
+- nenhum flow ficou órfão;
+- memória temporária liberada;
+- [test_task_scheduler_with_network.py](../edgesimpy-simulation/src/test_task_scheduler_with_network.py): passou;
+- [experimento_offloading_destinos.py](../edgesimpy-simulation/src/experimento_offloading_destinos.py): passou;
+- [experimento_multiplas_tasks.py](../edgesimpy-simulation/src/experimento_multiplas_tasks.py): passou;
+- novo experimento de robustez: passou;
+- nenhum arquivo em `edgesimpy-source/` foi alterado.
+
+### Conclusão metodológica
+
+Nos cenários testados, a afirmação “`LeastLoadedPolicy` pode ser melhor que
+`NearestServerPolicy` quando há congestionamento” foi observada em mais de uma
+faixa de carga, especialmente de 2 a 8 Tasks. Ela não é uma conclusão geral:
+
+1. com 1 Task, as políticas empataram;
+2. Random depende da seed e da distribuição produzida;
+3. com 8 Tasks, LeastLoaded reduziu a latência, mas não evitou violações;
+4. a métrica de LeastLoaded continua sendo contagem de admissões do TCC, não
+   utilização nativa de CPU/RAM do EdgeSimPy.
+
+### Limitações estatísticas
+
+- apenas cinco seeds para Random;
+- uma repetição determinística por carga para Nearest e LeastLoaded;
+- um User e dois candidatos;
+- uma configuração de deadline e tamanho de Task;
+- P95 indisponível para os grupos determinísticos pequenos;
+- ausência de intervalos de confiança;
+- a decisão é em lote, não adaptativa durante a execução.
+
+### Próxima etapa recomendada
+
+Repetir os cenários determinísticos com várias repetições controladas e ampliar
+as combinações de carga, mantendo a política fixa durante cada experimento.
+Depois, avaliar métricas de utilização e congestionamento com observabilidade
+explicitamente definida, antes de considerar ML.
+
+Não avançar automaticamente para ML, Cloud ou download.
+
+## 27. Fase 9: formalização da unidade de delay e latência derivada (07/09/2026)
+
+**Objetivo:** formalizar uma convenção de unidade para os delays de
+`NetworkLink` no cenário experimental e separar explicitamente transmissão,
+propagação topológica e latência de comunicação derivada.
+
+### Decisão metodológica
+
+O código e os datasets do EdgeSimPy 1.1.0 não declaram uma unidade universal
+para `NetworkLink.delay`. O JSON contém valores numéricos, como `5`, e o
+framework usa esses valores para calcular caminhos, mas não converte o campo
+para segundos nem o incorpora ao progresso do `NetworkFlow`.
+
+Foi adotada a seguinte convenção **do cenário deste TCC**:
+
+```text
+delay_unit = "ms"
+```
+
+Essa decisão não afirma que milissegundos sejam a unidade oficial ou universal
+do EdgeSimPy. A unidade agora é registrada no `ExperimentConfig`, tornando a
+hipótese reproduzível.
+
+### Separação das métricas
+
+As métricas foram mantidas separadas:
+
+```text
+transmission_time_s                 # observado no NetworkFlow
+path_delay_ms                       # soma dos delays do caminho
+propagation_delay_s = path_delay_ms / 1000
+derived_communication_latency_s = transmission_time_s + propagation_delay_s
+```
+
+`Task.completion_time_s` continua representando somente a conclusão observada
+na timeline do `TaskScheduler`. A latência derivada não altera o relógio do
+EdgeSimPy, não adiciona ticks e não é usada para reprogramar a execução.
+
+### Arquivos modificados
+
+- [integration/communication_metrics.py](../edgesimpy-simulation/src/integration/communication_metrics.py):
+  passou a aceitar a convenção explícita `delay_unit="ms"` e calcular
+  `path_delay_ms`, `propagation_delay_s` e
+  `derived_communication_latency_s`;
+- [experimento_offloading_destinos.py](../edgesimpy-simulation/src/experimento_offloading_destinos.py):
+  registrou `delay_unit`, adicionou as métricas derivadas e assertions para os
+  seis destinos.
+
+Nenhum arquivo em `edgesimpy-source/` foi alterado. Também não foram alterados
+`TaskScheduler`, `TaskExecutor`, `NetworkFlow`, placement, policies ou o
+algoritmo de bandwidth.
+
+### Configuração reproduzível
+
+- experiment ID: `offloading_destinations_sample2_v1`;
+- dataset: `tutorials/datasets/sample_dataset2.json`;
+- User: `1`;
+- destinos: EdgeServers `1` a `6`;
+- `delay_unit`: `ms`;
+- `data_size_mb`: `0.1`;
+- `cpu_cycles`: `1000`;
+- `processing_rate_cycles_per_second`: `500`;
+- `tick_duration`: `1.0s`;
+- bandwidth: `max_min_fairness`;
+- seed: `20260905`;
+- deadline: `10s`;
+- uma repetição por destino.
+
+Comando executado:
+
+```powershell
+cd edgesimpy-simulation
+.venv\Scripts\python.exe src\experimento_offloading_destinos.py
+```
+
+### Resultados E1-E6
+
+| Servidor | Hops | Path delay (ms) | Transmissão (s) | Propagação (s) | Latência derivada (s) | Fila (s) | Execução (s) | Conclusão (s) |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| E1 | 3 | 15 | 8 | 0,015 | 8,015 | 0 | 2 | 11 |
+| E2 | 4 | 20 | 8 | 0,020 | 8,020 | 0 | 2 | 11 |
+| E3 | 0 | 0 | 0 | 0,000 | 0,000 | 0 | 2 | 2 |
+| E4 | 4 | 20 | 8 | 0,020 | 8,020 | 0 | 2 | 11 |
+| E5 | 1 | 5 | 8 | 0,005 | 8,005 | 0 | 2 | 11 |
+| E6 | 2 | 10 | 8 | 0,010 | 8,010 | 0 | 2 | 11 |
+
+Foi confirmada a ordenação topológica:
+
+```text
+E5 < E6 < E1
+5ms < 10ms < 15ms
+```
+
+O destino local E3 possui zero hops, zero propagação e zero transmissão
+nativa. Nos destinos remotos, a latência derivada é maior que o tempo de
+transmissão, como esperado.
+
+### Fatos observados e métricas derivadas
+
+**Medido pelo ambiente:**
+
+- path e número de hops;
+- bandwidth e progresso do `NetworkFlow`;
+- `transmission_time_s`;
+- fila, execução e `completion_time_s`;
+- deadline violation.
+
+**Calculado externamente pela camada do TCC:**
+
+- interpretação dos valores do cenário como `path_delay_ms`;
+- `propagation_delay_s`;
+- `derived_communication_latency_s`.
+
+Assim, a `NearestServerPolicy` passa a ser mais informativa: mesmo quando a
+timeline nativa mantém 8 segundos de transmissão para todos os destinos
+remotos, a comparação registra diferenças defensáveis de propagação e de
+latência de comunicação derivada.
+
+### Validações
+
+- seis destinos executados isoladamente;
+- `hops == len(path) - 1`;
+- E3 com zero hops, zero propagação e zero transmissão;
+- transmissão e delays não negativos;
+- latência derivada maior que a transmissão nos destinos remotos;
+- ordenação E5 < E6 < E1 confirmada;
+- erros estáticos inexistentes nos arquivos alterados;
+- regressão de [test_task_scheduler_with_network.py](../edgesimpy-simulation/src/test_task_scheduler_with_network.py):
+  `10/10` validações passaram;
+- nenhum segundo relógio, tick artificial ou alteração de `completion_time_s`.
+
+### Limitações
+
+1. A unidade `ms` é uma convenção experimental do TCC, não uma garantia do
+   EdgeSimPy.
+2. O `NetworkFlow` continua não incorporando delay na duração nativa da
+   transferência.
+3. A latência derivada não altera a deadline observada pelo scheduler nesta
+   etapa; ela é uma métrica adicional de análise.
+4. O experimento usa uma Task por destino e ainda não mede contention de fila.
+5. A conversão de `data_size_mb` para a unidade usada pelo flow continua sendo
+   uma hipótese operacional.
+
+### Próxima etapa recomendada
+
+Executar uma matriz controlada com múltiplas Tasks por destino, mantendo a
+convenção `delay_unit="ms"`, para medir fila, throughput, conclusão e taxa de
+violação de deadline. A timeline nativa e a latência derivada devem continuar
+reportadas separadamente.
+
+Não avançar automaticamente para Cloud, download ou ML.
+
+## 31. Fase 13: sensibilidade de pesos em conflitos de delay e carga (07/09/2026)
+
+**Objetivo:** verificar se a `HybridHeuristicPolicy` realmente diverge da
+`LeastLoadedPolicy` quando o servidor com menor delay possui maior carga de
+admissão.
+
+### Conflitos reais identificados
+
+A matriz do `sample_dataset2.json` permitiu construir três cenários sem alterar
+a topologia:
+
+- User 1: E5 = 5 ms e E2 = 20 ms;
+- User 3: E2 = 5 ms e E6 = 10 ms;
+- User 5: E6 = 5 ms e E2 = 10 ms.
+
+Em cada cenário, as Tasks anteriores da decisão em lote podem aumentar a
+contagem de admissões do servidor mais próximo. Assim, o menor delay e a menor
+carga passam a apontar para servidores diferentes.
+
+### Grade definida antes da execução
+
+Foram testados previamente os pares:
+
+```text
+(w_delay, w_load) =
+(0.00, 1.00),
+(0.25, 0.75),
+(0.50, 0.50),
+(0.75, 0.25),
+(1.00, 0.00)
+```
+
+Cada par soma 1. A execução foi independente para cada cenário, política e
+combinação de pesos. Nearest e LeastLoaded foram executadas como baselines de
+comparação.
+
+Arquivo criado:
+
+- [experimento_sensibilidade_heuristica.py](../edgesimpy-simulation/src/experimento_sensibilidade_heuristica.py).
+
+### Decisões observadas
+
+| Cenário | Baseline Nearest | Baseline LeastLoaded | Pesos intermediários com distribuição |
+|---|---|---|---|
+| User 1, E2/E5 | E5/E5/E5 | E2/E5/E2 | 0,25/0,75 e 0,50/0,50: E5/E2/E5 |
+| User 3, E2/E6 | E2/E2/E2 | E2/E6/E2 | 0,25/0,75: E2/E6/E2; 0,50/0,50 ainda concentra |
+| User 5, E2/E6 | E6/E6/E6 | E2/E6/E2 | 0,25/0,75 e 0,50/0,50: E6/E2/E6 |
+
+Os extremos confirmaram a expectativa metodológica:
+
+- `w_delay = 0` reproduziu LeastLoaded;
+- `w_delay = 1` reproduziu Nearest.
+
+Os pesos intermediários produziram comportamento diferente de LeastLoaded em
+alguns cenários, sem garantir vantagem universal. No cenário de User 3, o
+componente de carga precisou ser dominante para evitar concentração.
+
+### Resultados sistêmicos
+
+Cada cenário possui três Tasks e deadline de 20s. A diferença entre decisões
+distribuídas e concentradas foi observada nos mesmos valores já validados:
+
+```text
+Distribuição: média de conclusão 17s, fila média 0,67s,
+transmissão média 13,33s, uma violação.
+
+Concentração: média de conclusão 29s, fila média 2s,
+transmissão média 24s, três violações.
+```
+
+O experimento registrou por Task servidor, carga conhecida, delays
+normalizados, custo, transmissão, propagação, comunicação derivada, fila,
+execução, conclusão e deadline.
+
+### Conclusão metodológica
+
+Foi demonstrado que `HybridHeuristicPolicy != LeastLoadedPolicy` em cenários
+reais de conflito. Contudo, nenhum peso foi escolhido como configuração oficial:
+
+1. `0/1` e `1/0` servem como referências aos baselines;
+2. pesos intermediários dependem da relação entre diferença de delay e diferença
+   de carga;
+3. a decisão continua sendo estática e em lote;
+4. selecionar o menor resultado observado seria tuning pós-hoc.
+
+### Limitações e regressões
+
+- apenas três cenários de User/candidatos;
+- três Tasks por cenário;
+- carga representada por admissões do TCC, não CPU/RAM nativos;
+- não foi feita calibração nem validação separada de pesos;
+- nenhum arquivo em `edgesimpy-source/` foi alterado.
+
+Passaram novamente:
+
+- `test_task_scheduler_with_network.py`;
+- `experimento_offloading_destinos.py`;
+- `experimento_multiplas_tasks.py`;
+- `experimento_robustez_politicas.py`;
+- `experimento_heuristica_offloading.py`;
+- `experimento_sensibilidade_heuristica.py`.
+
+### Próxima etapa recomendada
+
+Manter os pesos como fator experimental e, se necessário, executar uma fase
+separada de calibração e avaliação. Não transformar o melhor peso observado em
+configuração oficial sem separar esses dois conjuntos.
+
+Não avançar automaticamente para ML, Cloud ou download.
+
+## 28. Fase 10: comparação de políticas sob congestionamento (07/09/2026)
+
+**Objetivo:** verificar se escolher o menor atraso de rede continua sendo uma
+boa regra quando várias Tasks competem por bandwidth e por um único slot de
+execução (`max_concurrent_tasks=1`).
+
+### Hipótese e separação metodológica
+
+O experimento compara a decisão de destino com as consequências observadas na
+rede e no scheduler:
+
+```text
+Política -> servidor escolhido -> NetworkFlow -> fila -> execução -> resultado
+```
+
+As políticas não recebem resultados futuros. Não usam `completion_time_s`,
+`queue_time_s`, `deadline_violation` ou qualquer valor produzido depois da
+execução.
+
+### Política adicionada
+
+Foi criada `LeastLoadedPolicy` em
+[policies/offloading.py](../edgesimpy-simulation/src/policies/offloading.py).
+
+O EdgeSimPy não possui uma fila nativa de Tasks nem uma métrica confiável de
+carga de execução. Por isso, a política usa somente a **contagem de Tasks já
+admitidas pela camada do TCC durante a rodada de decisões**. Em empate, usa o
+menor ID do servidor.
+
+Essa é uma baseline de distribuição do modelo do TCC, não uma política nativa
+do EdgeSimPy. Ela não inspeciona estado futuro e não manipula o scheduler.
+
+As políticas comparadas foram:
+
+- `RandomPolicy`, com seed explícita;
+- `NearestServerPolicy`, pelo menor `path_delay_ms`;
+- `LeastLoadedPolicy`, pela menor contagem de Tasks admitidas.
+
+### Experimento
+
+Arquivo criado:
+
+- [experimento_politicas_congestionamento.py](../edgesimpy-simulation/src/experimento_politicas_congestionamento.py).
+
+Cada política foi executada em uma instância nova do `Simulator`, recarregando
+o dataset para evitar compartilhamento de estado global do EdgeSimPy.
+
+**Configuração controlada:**
+
+- dataset: `tutorials/datasets/sample_dataset2.json`;
+- User: `1`;
+- candidatos: EdgeServers `2` e `5`;
+- Tasks: `A`, `B` e `C`;
+- ordem de submissão: `A`, `B`, `C`;
+- `data_size_mb = 0.1`;
+- `cpu_cycles = 1000`;
+- `required_memory_mb = 100`;
+- `deadline = 20s`;
+- `processing_rate_cycles_per_second = 500`;
+- `tick_duration = 1s`;
+- bandwidth: `max_min_fairness`;
+- `delay_unit = "ms"`;
+- seed: `20260907`;
+- uma repetição por política.
+
+Comando executado:
+
+```powershell
+cd edgesimpy-simulation
+.venv\Scripts\python.exe src\experimento_politicas_congestionamento.py
+```
+
+### Resultados agregados
+
+| Política | Destinos A/B/C | Tasks concluídas | Violações | Conclusão média | Conclusão máxima | Fila média | Transmissão média |
+|---|---|---:|---:|---:|---:|---:|---:|
+| Random | E2/E2/E5 | 3 | 1 | 17s | 21s | 0,67s | 13,33s |
+| Nearest | E5/E5/E5 | 3 | 3 | 29s | 31s | 2s | 24s |
+| LeastLoaded | E2/E5/E2 | 3 | 1 | 17s | 21s | 0,67s | 13,33s |
+
+### Resultados por Task
+
+| Política | Task | Servidor | Transmissão | Fila | Execução | Conclusão | Deadline |
+|---|---|---:|---:|---:|---:|---:|---|
+| Random | A | E2 | 16s | 0s | 2s | 19s | cumprida |
+| Random | B | E2 | 16s | 2s | 2s | 21s | violada |
+| Random | C | E5 | 8s | 0s | 2s | 11s | cumprida |
+| Nearest | A | E5 | 24s | 0s | 2s | 27s | violada |
+| Nearest | B | E5 | 24s | 2s | 2s | 29s | violada |
+| Nearest | C | E5 | 24s | 4s | 2s | 31s | violada |
+| LeastLoaded | A | E2 | 16s | 0s | 2s | 19s | cumprida |
+| LeastLoaded | B | E5 | 8s | 0s | 2s | 11s | cumprida |
+| LeastLoaded | C | E2 | 16s | 2s | 2s | 21s | violada |
+
+### Interpretação
+
+Neste cenário, `NearestServerPolicy` foi a pior baseline sistêmica. Embora E5
+tenha o menor atraso topológico para User 1, enviar as três Tasks para o mesmo
+servidor concentrou os flows no mesmo enlace e elevou a transmissão para 24s
+por Task.
+
+`LeastLoadedPolicy` distribuiu as decisões entre E2 e E5 e reduziu a
+contenção. Obteve uma violação de deadline, contra três da política Nearest.
+Seu resultado agregado foi igual ao Random nesta seed, mas a decisão foi
+determinística e explicável.
+
+Essa conclusão é específica do cenário, da seed, da carga e dos dois
+servidores candidatos. Não demonstra que `LeastLoadedPolicy` é sempre melhor,
+nem que distribuir Tasks sempre supera escolher o servidor mais próximo.
+
+### Validações
+
+- cada Task recebeu exatamente um servidor;
+- as políticas não executaram Tasks nem manipularam diretamente o scheduler;
+- FIFO permaneceu funcionando;
+- `max_concurrent_tasks=1` permaneceu funcionando;
+- nenhuma Task executou antes do upload terminar;
+- nenhum flow ficou órfão;
+- memória temporária foi liberada ao final;
+- todos os flows terminaram;
+- [test_task_scheduler_with_network.py](../edgesimpy-simulation/src/test_task_scheduler_with_network.py): passou;
+- [experimento_offloading_destinos.py](../edgesimpy-simulation/src/experimento_offloading_destinos.py): passou;
+- diagnósticos estáticos dos arquivos alterados: sem erros;
+- nenhum arquivo em `edgesimpy-source/` foi modificado.
+
+### Limitações
+
+1. `LeastLoadedPolicy` usa contagem de admissões, não utilização real de CPU,
+   RAM ou uma fila nativa do EdgeSimPy.
+2. A contagem é um estado de decisão da rodada e não representa execução
+   futura ou carga dinâmica completa.
+3. Foi usada uma única seed e uma repetição por política.
+4. O cenário possui três Tasks, dois servidores candidatos e uma única User.
+5. A latência derivada continua separada de `completion_time_s`.
+
+### Próxima etapa recomendada
+
+Repetir a comparação com múltiplas seeds e níveis de carga, mantendo a mesma
+separação entre política, rede, fila e execução. Reportar média, dispersão,
+P95/P99 quando houver amostras suficientes e taxa de violação de deadline.
+
+Não avançar automaticamente para ML, Cloud ou download.
+
+## 32. Auditoria metodológica da formulação de ML (07/09/2026)
+
+**Objetivo:** definir formalmente o problema de aprendizado antes de
+implementar WiSARD, MLP ou qualquer treinamento.
+
+### Formulação atual do C#
+
+O TCC original usa classificação binária:
+
+```text
+X -> {Edge, Cloud}
+```
+
+`OffloadingSample.Features()` fornece 12 entradas. O
+`EdgeCloudSimulator.Simulate()` calcula os tempos estimados para Edge e Cloud e
+define:
+
+```text
+BestDestination = Edge se TotalResponseTimeEdge < TotalResponseTimeCloud
+            Cloud caso contrário
+```
+
+O empate favorece Cloud porque a condição usa `<` e o `else` atribui Cloud.
+Não há classificação por EdgeServer específico no C# atual.
+
+`Random`, `FixedRule`, `SimpleHeuristic`, `WiSARD` e `MLP` implementam
+`Predict(sample) -> Destination`. WiSARD e MLP treinam diretamente com
+`BestDestination`. O `Evaluator` compara a predição com esse mesmo campo e
+calcula accuracy, F1, latência escolhida e perda.
+
+### Features auditadas
+
+| Feature | Unidade | Momento/validade no EdgeSimPy |
+|---|---|---|
+| `CpuCycles` | ciclos | requisito da Task, permitido se vier da entrada |
+| `TaskSizeMB` | MB | requisito da Task, permitido antes da decisão |
+| `DeadlineMs` | ms | requisito da Task, permitido antes da decisão |
+| `LatencySensitivity` | normalizado 0–1 | permitido se vier da entrada; não há equivalente nativo confirmado |
+| `RequiredMemoryMB` | MB | requisito da Task, permitido antes da decisão |
+| `EdgeCpuUsagePercent` | % | disponível no dataset analítico; não há equivalente confiável para execução de Tasks no EdgeSimPy |
+| `EdgeMemoryUsagePercent` | % | estado analítico; não deve ser inventado a partir de `EdgeServer.memory` |
+| `EdgeQueueSize` | Tasks | no C# é estado analítico; no EdgeSimPy só há a contagem de admissões do TCC, não fila nativa no instante futuro |
+| `BandwidthMbps` | Mbps | entrada/hipótese do cenário; o EdgeSimPy usa bandwidth de enlaces em unidade própria do dataset |
+| `NetworkLatencyMs` | ms | permitido como convenção de cenário se calculado da topologia; não é incorporado ao tempo nativo do NetworkFlow |
+| `CloudCpuUsagePercent` | % | não permitido: Cloud não está implementada no EdgeSimPy |
+| `CloudQueueSize` | Tasks | não permitido: Cloud e sua fila não existem na camada atual |
+
+As features de CPU/RAM/fila Edge do C# são **duvidosas** para avaliação
+independente no EdgeSimPy. Elas podem ser usadas para reproduzir o problema
+analítico original, mas não devem ser apresentadas como observações físicas do
+ambiente sem um contrato explícito e uma medição correspondente.
+
+### Formulações consideradas
+
+**A — classificação por EdgeServer (`E1`...`E6`):** não corresponde ao rótulo
+original Edge/Cloud, exigiria gerar labels por servidor e aumentaria o problema
+com novos servidores/topologias. Não é recomendada agora.
+
+**B — classificação Edge/Cloud:** corresponde diretamente ao C# e é simples
+para WiSARD e MLP, mas não escolhe um EdgeServer concreto. Precisaria de uma
+segunda política de placement para transformar Edge em servidor, introduzindo
+uma decisão adicional.
+
+**C — predizer o melhor destino:** é semanticamente equivalente a B quando o
+destino é Edge/Cloud e o label é `BestDestination`. Continua dependente da
+função objetivo que gera o label.
+
+**D — regressão de custo por destino:** seria mais rica e permitiria
+`argmin(custo)`, mas exigiria labels contínuos confiáveis para cada destino,
+mais dados e uma representação de Cloud/servidores ainda não definida. É
+adequada como extensão posterior, não como primeiro ML do TCC.
+
+### Circularidade e leakage
+
+O dataset sintético é gerado assim:
+
+```text
+amostrar features -> EdgeCloudSimulator.Simulate()
+            -> tempos Edge/Cloud -> BestDestination
+```
+
+O modelo aprende a reproduzir o simulador analítico, não necessariamente a
+realidade física. Além disso, `TotalResponseTimeEdge`,
+`TotalResponseTimeCloud`, `ExecutionTimeEdge`, `ExecutionTimeCloud` e
+`BestDestination` são resultados do simulador e não podem entrar em `X` se o
+objetivo for prever a decisão antes da execução.
+
+O split estratificado e a separação train/test reduzem mistura direta entre
+amostras, mas não removem a circularidade entre geração do label e treinamento.
+
+### Recomendação principal
+
+Para o próximo estágio, definir:
+
+```text
+X = [CpuCycles, TaskSizeMB, DeadlineMs, LatencySensitivity,
+   RequiredMemoryMB, path_delay_ms, admitted_task_count]
+
+y = BestDestination
+```
+
+com `y` inicialmente binário Edge/Cloud, preservando compatibilidade com o C#.
+No EdgeSimPy atual, a decisão Edge deve ser seguida por uma política de
+placement explícita entre EdgeServers candidatos; ela não deve ser confundida
+com o label original.
+
+`path_delay_ms` deve ser a convenção experimental já formalizada. A contagem de
+admissões deve ser identificada como estado do modelo do TCC, não como CPU/RAM
+ou fila nativa do EdgeSimPy.
+
+Essa formulação foi escolhida porque:
+
+1. mantém correspondência com o problema original;
+2. é compatível com WiSARD e MLP binários;
+3. usa requisitos e observações disponíveis antes da decisão;
+4. permite comparar ML com Random, Nearest, LeastLoaded e Hybrid;
+5. preserva a avaliação sistêmica independente no EdgeSimPy.
+
+### Arquitetura de avaliação futura
+
+```text
+observação permitida -> X -> modelo ML -> Edge/Cloud
+            -> placement/servidor -> EdgeSimPy
+            -> rede + fila + execução -> métricas sistêmicas
+```
+
+As métricas principais devem ser deadline violation rate, mean/P95/P99 de
+completion ou latência de comunicação, queue time, transmission time,
+throughput, taxa de conclusão e utilização quando observável. Accuracy, F1 e
+matriz de confusão ficam como métricas secundárias.
+
+Nenhum treinamento, novo dataset, Cloud, WiSARD ou MLP foi implementado nesta
+etapa.

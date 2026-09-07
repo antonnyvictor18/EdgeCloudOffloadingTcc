@@ -2,6 +2,8 @@
 
 from .offloading import (
 	FixedServerPolicy,
+	HybridHeuristicPolicy,
+	LeastLoadedPolicy,
 	NearestServerPolicy,
 	OffloadingPolicy,
 	RandomPolicy,
@@ -9,6 +11,8 @@ from .offloading import (
 
 __all__ = [
 	"FixedServerPolicy",
+	"HybridHeuristicPolicy",
+	"LeastLoadedPolicy",
 	"NearestServerPolicy",
 	"OffloadingPolicy",
 	"RandomPolicy",

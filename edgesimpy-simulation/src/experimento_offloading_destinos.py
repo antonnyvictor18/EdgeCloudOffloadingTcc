@@ -29,6 +29,7 @@ class ExperimentConfig:
     seed: int = 20260905
     tick_duration_s: float = 1.0
     bandwidth_algorithm: str = "max_min_fairness"
+    delay_unit: str = "ms"  # Scenario convention; not an EdgeSimPy universal.
     processing_rate_cycles_per_second: float = 500.0
     task_id: str = "fixed_task"
     user_id: int = 1
@@ -103,12 +104,18 @@ def run_destination(config: ExperimentConfig, server_id: int) -> dict[str, Any]:
         server=target_server,
         topology=simulator.topology,
         path=path,
+        delay_unit=config.delay_unit,
     )
     assert communication_metrics.hops == len(communication_metrics.path) - 1
-    assert communication_metrics.path_delay_dataset_units >= 0
+    assert communication_metrics.path_delay_ms >= 0
     assert communication_metrics.transmission_time_s is None or communication_metrics.transmission_time_s >= 0
-    if communication_metrics.derived_communication_latency_s is not None:
-        assert communication_metrics.derived_communication_latency_s >= communication_metrics.transmission_time_s
+    assert communication_metrics.propagation_delay_s >= 0
+    if communication_metrics.path_delay_ms > 0:
+        assert communication_metrics.propagation_delay_s > 0
+        assert communication_metrics.derived_communication_latency_s > communication_metrics.transmission_time_s
+    else:
+        assert communication_metrics.propagation_delay_s == 0
+        assert communication_metrics.derived_communication_latency_s == communication_metrics.transmission_time_s
 
     return {
         "task_id": task.task_id,
@@ -116,7 +123,8 @@ def run_destination(config: ExperimentConfig, server_id: int) -> dict[str, Any]:
         "target_server_id": target_server.id,
         "path": [node.id for node in path],
         "hops": hops,
-        "path_delay_dataset_units": communication_metrics.path_delay_dataset_units,
+        "path_delay_ms": communication_metrics.path_delay_ms,
+        "propagation_delay_s": communication_metrics.propagation_delay_s,
         "derived_communication_latency_s": communication_metrics.derived_communication_latency_s,
         "is_local": communication_metrics.is_local,
         "data_size_mb": config.data_size_mb,
@@ -151,8 +159,12 @@ def main() -> int:
     local_result = local_results[0]
     assert local_result["hops"] == 0
     assert local_result["transmission_time_s"] == 0.0
+    assert local_result["propagation_delay_s"] == 0.0
+    assert local_result["derived_communication_latency_s"] == 0.0
     if len({tuple(result["path"]) for result in results}) > 1:
-        assert len({result["path_delay_dataset_units"] for result in results}) > 1
+        assert len({result["path_delay_ms"] for result in results}) > 1
+    by_server = {result["target_server_id"]: result for result in results}
+    assert by_server[5]["path_delay_ms"] < by_server[6]["path_delay_ms"] < by_server[1]["path_delay_ms"]
     if not any(result["deadline_violation"] != local_results[0]["deadline_violation"] for result in remote_results):
         raise AssertionError("destination change did not change deadline outcome")
 
