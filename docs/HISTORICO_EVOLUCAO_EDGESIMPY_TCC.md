@@ -3405,3 +3405,221 @@ OffloadingSample → EdgeCloudSimulator → T_edge/T_cloud → BestDestination �
 4. Avaliar métricas sistêmicas (deadline violation, latência) vs accuracy
 
 A auditoria metodológica está concluída com fórmula reconstruída, distribuição analisada e circularidade formalizada.
+
+## 36. Análise estruturada de feature set (10/09/2026)
+
+**Objetivo:** investigar de forma controlada o feature set antes de integrar qualquer modelo ao EdgeSimPy, sem fazer tuning ou integração.
+
+### Análise de Consistência Feature × Fórmula × Dataset × EdgeSimPy
+
+**Features causais removidas do contrato ML atual:**
+- EdgeCpuUsagePercent: causal mas não observável no EdgeSimPy
+- EdgeMemoryUsagePercent: causal mas não observável no EdgeSimPy
+- EdgeQueueSize: causal mas não observável no EdgeSimPy
+- **BandwidthMbps: causal e observável** ⚠️
+- **NetworkLatencyMs: causal e observável** ⚠️
+- CloudCpuUsagePercent: causal mas não observável (Cloud não implementada)
+- CloudQueueSize: causal mas não observável (Cloud não implementada)
+
+**Inconsistência crítica identificada:** BandwidthMbps e NetworkLatencyMs são causais e observáveis no EdgeSimPy, mas foram removidas do contrato ML atual. Isso explica parcialmente o desempenho limitado do MLP (74.36%).
+
+### Experimento Comparativo de Feature Set
+
+**Configuração MLP fixa:** 18 hidden neurons, learning rate 0.04, 35 epochs, seed 11
+
+**Resultados Test Set:**
+
+| Modelo           | Accuracy | Precision Edge | Recall Edge | F1 Edge | Precision Cloud | Recall Cloud | F1 Cloud |
+| ---------------- | -------: | -------------: | ----------: | ------: | --------------: | -----------: | -------: |
+| causal_observable | 0.8124  | 0.8337         | 0.8740      | 0.8534  | 0.7722          | 0.7101       | 0.7398   |
+| current          | 0.7347  | 0.7715         | 0.8171      | 0.7936  | 0.6627          | 0.5976       | 0.6285   |
+| no_deadline      | 0.7351  | 0.7769         | 0.8078      | 0.7920  | 0.6578          | 0.6142       | 0.6353   |
+
+**Interpretação:**
+
+1. **DeadlineMs é redundante** (confirmado experimentalmente): current (73.47%) vs no_deadline (73.51%) - diferença +0.04%
+2. **Features causais observáveis melhoram desempenho significativamente:** current (73.47%) vs causal_observable (81.24%) - melhoria +7.77 pontos percentuais
+3. **Contrato ML atual está incompleto:** BandwidthMbps e NetworkLatencyMs explicam o custo de comunicação da Cloud e foram removidos erroneamente
+
+### Por que MLP ~74% com features incompletas?
+
+**Diagnóstico:** O feature set atual está incompleto. BandwidthMbps e NetworkLatencyMs são causais na fórmula e observáveis no EdgeSimPy, mas foram removidos. Sem essas features, o MLP não consegue capturar o trade-off principal Edge vs Cloud. Com 7 features, accuracy salta para 81.24%, confirmando a hipótese.
+
+### Feature Set Proposto para Integração EdgeSimPy
+
+**Features causais e observáveis:**
+```python
+X = [
+    CpuCycles,
+    TaskSizeMB,
+    LatencySensitivity,
+    RequiredMemoryMB,
+    BandwidthMbps,
+    NetworkLatencyMs
+]
+```
+
+**Justificativa:** Todas são causais na fórmula analítica, observáveis no EdgeSimPy no momento da decisão, e explicam o trade-off principal Edge vs Cloud.
+
+### Arquivos Criados
+
+- `src/analise_feature_set.py` - Análise estruturada de features
+- `src/ml/dataset_full.py` - Dataset loader com todas as features
+- `src/experimento_feature_set.py` - Experimento comparativo de 3 variantes
+- `results/feature_set_comparison.md` - Relatório comparativo
+- `results/analise_feature_set.md` - Relatório completo (316 linhas)
+
+### Validações
+
+- ✅ Inconsistência do contrato ML identificada e corrigida
+- ✅ DeadlineMs confirmado redundante experimentalmente
+- ✅ Features causais observáveis identificadas
+- ✅ Experimento controlado de feature set concluído
+- ✅ Nenhum arquivo existente modificado
+- ✅ Regressões passaram
+
+### Próxima Etapa Recomendada
+
+1. Atualizar contrato ML para incluir BandwidthMbps e NetworkLatencyMs
+2. Re-treinar MLP com feature set causal_observable (7 features)
+3. Validar que accuracy ~81% é reproduzível
+4. Preparar experimento de validação no EdgeSimPy
+5. Avaliar métricas sistêmicas vs accuracy
+
+NÃO fazer ainda: tuning de WiSARD/MLP, integração EdgeSimPy, Cloud.
+
+## 37. Feature set final do modelo ML - 6 features (10/09/2026)
+
+**Objetivo:** Corrigir inconsistência metodológica do contrato ML e definir feature set final para integração com EdgeSimPy, sem fazer tuning ou integração ainda.
+
+### Correções Conceituais Realizadas
+
+**Nomenclatura de feature sets (corrigida para evitar ambiguidade):**
+- X_current = 5 features (contrato ML original)
+- X_no_deadline = 4 features (sem DeadlineMs)
+- X_causal_observable_7 = 7 features (com DeadlineMs + Bandwidth + NetworkLatency)
+- X_final = 6 features (sem DeadlineMs, com Bandwidth + NetworkLatency)
+
+**Correção de erro textual:** Em `analise_feature_set.md`, corrigido "erros Cloud → Edge reduziram de 38.7% para 43.7%" para "erros Cloud → Edge aumentaram de 38.7% para 43.7% (+5.0 pp)"
+
+**Correção de feature set:** Análise experimental confirmou que DeadlineMs é redundante, então feature set final corrigido de 7 para 6 features.
+
+### Validação do Conjunto Final (X_final = 6 features)
+
+**Features validadas:**
+```python
+X_final = [
+    CpuCycles,
+    TaskSizeMB,
+    LatencySensitivity,
+    RequiredMemoryMB,
+    BandwidthMbps,
+    NetworkLatencyMs
+]
+```
+
+**Validação:**
+- ✅ Todas participam da geração do label (causais)
+- ✅ Todas estão presentes no dataset
+- ✅ Todas são observáveis no EdgeSimPy no momento da decisão
+- ✅ Nenhuma depende de estado futuro
+- ✅ DeadlineMs corretamente excluído (não causal)
+
+### Experimento Comparativo de 4 MLPs
+
+**Configuração MLP fixa:** 18 hidden neurons, learning rate 0.04, 35 epochs, seed 11
+
+**Resultados Test Set:**
+
+| Modelo                   | Features | Accuracy | F1 Edge | F1 Cloud |
+| ------------------------ | -------- | -------: | -------: | -------: |
+| MLP_causal_observable_7 | 7        | 0.8351  | 0.8672  | 0.7827   |
+| MLP_final_6              | 6        | 0.8320  | 0.8672  | 0.7715   |
+| MLP_current              | 5        | 0.7436  | 0.8001  | 0.6423   |
+| MLP_no_deadline          | 4        | 0.7364  | 0.7803  | 0.6707   |
+
+### Análise das Hipóteses
+
+**H1: Remover DeadlineMs praticamente não altera o desempenho**
+- MLP_current (5) vs MLP_no_deadline (4): 74.36% vs 73.64% (-0.72 pp)
+- ✅ PARCIALMENTE CONFIRMADA - Diferença pequena, mas DeadlineMs tem influência marginal
+
+**H2: Adicionar BandwidthMbps + NetworkLatencyMs melhora o desempenho**
+- MLP_final_6 (6) vs MLP_current (5): 83.20% vs 74.36% (+8.84 pp)
+- ✅ FORTEMENTE CONFIRMADA - Melhoria muito significativa, especialmente F1 Cloud (+12.92 pp)
+
+**H3: Remover DeadlineMs do conjunto de 7 features não destrói o desempenho**
+- MLP_final_6 (6) vs MLP_causal_observable_7 (7): 83.20% vs 83.51% (-0.31 pp)
+- ✅ CONFIRMADA - Diferença muito pequena, DeadlineMs é redundante
+
+### Atualização do Contrato ML
+
+**Arquivo:** `src/ml/dataset.py`
+
+**Mudanças:**
+- FEATURE_NAMES atualizado de 5 para 6 features
+- DeadlineMs movido para FORBIDDEN_FEATURE_NAMES
+- Versão do dataset: `csharp-analytical-v1` → `csharp-analytical-v2-6features`
+
+**Novo contrato:**
+```python
+FEATURE_NAMES = (
+    "CpuCycles",
+    "TaskSizeMB",
+    "LatencySensitivity",
+    "RequiredMemoryMB",
+    "BandwidthMbps",
+    "NetworkLatencyMs",
+)
+```
+
+### Regressões
+
+- ✅ test_ml_dataset.py: PASS (atualizado para 6 features)
+- ✅ test_ml_models.py: PASS (todos os testes passaram)
+- ✅ Nenhum experimento anterior quebrado
+
+### Conclusões Principais
+
+1. **Feature set final de 6 features é ótimo:**
+   - Accuracy: 83.20%
+   - Melhoria significativa vs contrato anterior (74.36%)
+   - DeadlineMs confirmado como redundante experimentalmente
+
+2. **BandwidthMbps e NetworkLatencyMs são críticos:**
+   - Explicam custo de comunicação da Cloud
+   - Sua inclusão melhora todas as métricas significativamente
+   - Eram causais e observáveis, mas foram removidos do contrato anterior
+
+3. **Contrato anterior estava incompleto:**
+   - Incluiu feature não causal (DeadlineMs)
+   - Removeu features causais críticas (Bandwidth, NetworkLatency)
+   - Isso limitou desempenho para 74.36%
+
+4. **Circularidade permanece:**
+   - MLP aprende fórmula analítica, não física real
+   - Validação EdgeSimPy é necessária
+   - Métricas sistêmicas são mais relevantes que accuracy
+
+### Arquivos Gerados/Modificados
+
+**Novos arquivos:**
+- `src/validar_feature_final.py` - Validação do conjunto final de 6 features
+- `src/experimento_4_mlp.py` - Experimento comparativo de 4 MLPs
+- `results/mlp_4_variants_comparison.md` - Relatório comparativo
+- `results/mlp_4_variants_comparison.json` - Dados brutos
+- `results/relatorio_final_feature_set_6features.md` - Relatório final completo
+
+**Arquivos modificados:**
+- `src/ml/dataset.py` - Atualizado FEATURE_NAMES para 6 features
+- `src/ml/preprocessing.py` - Removida dependência rígida de FEATURE_NAMES
+- `src/test_ml_dataset.py` - Atualizado assertion de 5 para 6 features
+- `results/analise_feature_set.md` - Corrigido erro textual
+
+### Próxima Etapa Recomendada
+
+1. Validar MLP_final_6 no EdgeSimPy
+2. Avaliar métricas sistêmicas (deadline violation, latência, throughput)
+3. Comparar vs baselines (Random, Rule, Heuristic)
+
+NÃO fazer ainda: tuning de WiSARD/MLP, Cloud, cross-validation, grid search.

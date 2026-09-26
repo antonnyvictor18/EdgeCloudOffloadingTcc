@@ -1,0 +1,171 @@
+{
+  "config": {
+    "experiment_id": "mlp_edgesimpy_integration_v1",
+    "dataset": "tutorials/datasets/sample_dataset2.json",
+    "user_id": 1,
+    "candidate_server_ids": [
+      2,
+      5
+    ],
+    "random_seed": 20260910
+  },
+  "summary": {
+    "total_tasks": 10,
+    "edge_predictions": 9,
+    "cloud_predictions": 1,
+    "cloud_unavailable": 1,
+    "edge_rate": 0.9
+  },
+  "task_results": [
+    {
+      "task_id": "task_00",
+      "predicted_destination": "Edge",
+      "execution_status": "SIMULATED_ONLY",
+      "selected_edge_server_id": 5,
+      "features_used": {
+        "CpuCycles": 7061863218.182835,
+        "TaskSizeMB": 38.09974384811578,
+        "LatencySensitivity": 0.16370556413093362,
+        "RequiredMemoryMB": 4185.755103948194,
+        "BandwidthMbps": 12.5,
+        "NetworkLatencyMs": 11.666666666666666
+      },
+      "path_delay_ms": 5
+    },
+    {
+      "task_id": "task_01",
+      "predicted_destination": "Edge",
+      "execution_status": "SIMULATED_ONLY",
+      "selected_edge_server_id": 5,
+      "features_used": {
+        "CpuCycles": 5746141843.797618,
+        "TaskSizeMB": 85.0897411584714,
+        "LatencySensitivity": 0.8263088912885208,
+        "RequiredMemoryMB": 622.0374892170473,
+        "BandwidthMbps": 12.5,
+        "NetworkLatencyMs": 11.666666666666666
+      },
+      "path_delay_ms": 5
+    },
+    {
+      "task_id": "task_02",
+      "predicted_destination": "Edge",
+      "execution_status": "SIMULATED_ONLY",
+      "selected_edge_server_id": 5,
+      "features_used": {
+        "CpuCycles": 1539128957.7110708,
+        "TaskSizeMB": 19.47342582989736,
+        "LatencySensitivity": 0.6940537141872457,
+        "RequiredMemoryMB": 4879.741329758609,
+        "BandwidthMbps": 12.5,
+        "NetworkLatencyMs": 11.666666666666666
+      },
+      "path_delay_ms": 5
+    },
+    {
+      "task_id": "task_03",
+      "predicted_destination": "Edge",
+      "execution_status": "SIMULATED_ONLY",
+      "selected_edge_server_id": 5,
+      "features_used": {
+        "CpuCycles": 2948624783.108123,
+        "TaskSizeMB": 13.91047531106222,
+        "LatencySensitivity": 0.7424852213788496,
+        "RequiredMemoryMB": 1595.7531254168143,
+        "BandwidthMbps": 12.5,
+        "NetworkLatencyMs": 11.666666666666666
+      },
+      "path_delay_ms": 5
+    },
+    {
+      "task_id": "task_04",
+      "predicted_destination": "Edge",
+      "execution_status": "SIMULATED_ONLY",
+      "selected_edge_server_id": 5,
+      "features_used": {
+        "CpuCycles": 1173416483.3150587,
+        "TaskSizeMB": 41.34308442075732,
+        "LatencySensitivity": 0.2216620620486014,
+        "RequiredMemoryMB": 2721.4791360669474,
+        "BandwidthMbps": 12.5,
+        "NetworkLatencyMs": 11.666666666666666
+      },
+      "path_delay_ms": 5
+    },
+    {
+      "task_id": "task_05",
+      "predicted_destination": "Edge",
+      "execution_status": "SIMULATED_ONLY",
+      "selected_edge_server_id": 5,
+      "features_used": {
+        "CpuCycles": 6326391445.600561,
+        "TaskSizeMB": 100.97084093070319,
+        "LatencySensitivity": 0.9193787163539331,
+        "RequiredMemoryMB": 3788.6741524027507,
+        "BandwidthMbps": 12.5,
+        "NetworkLatencyMs": 11.666666666666666
+      },
+      "path_delay_ms": 5
+    },
+    {
+      "task_id": "task_06",
+      "predicted_destination": "Edge",
+      "execution_status": "SIMULATED_ONLY",
+      "selected_edge_server_id": 5,
+      "features_used": {
+        "CpuCycles": 4556618463.768563,
+        "TaskSizeMB": 25.517910093284762,
+        "LatencySensitivity": 0.6356218514826462,
+        "RequiredMemoryMB": 3683.1574938862914,
+        "BandwidthMbps": 12.5,
+        "NetworkLatencyMs": 11.666666666666666
+      },
+      "path_delay_ms": 5
+    },
+    {
+      "task_id": "task_07",
+      "predicted_destination": "Cloud",
+      "execution_status": "CLOUD_UNAVAILABLE",
+      "selected_edge_server_id": null,
+      "features_used": {
+        "CpuCycles": 7823112427.213582,
+        "TaskSizeMB": 1.3191716344439879,
+        "LatencySensitivity": 0.3777468332115347,
+        "RequiredMemoryMB": 4151.715698393511,
+        "BandwidthMbps": 12.5,
+        "NetworkLatencyMs": 11.666666666666666
+      },
+      "path_delay_ms": null
+    },
+    {
+      "task_id": "task_08",
+      "predicted_destination": "Edge",
+      "execution_status": "SIMULATED_ONLY",
+      "selected_edge_server_id": 5,
+      "features_used": {
+        "CpuCycles": 2107662150.8113406,
+        "TaskSizeMB": 148.29983744153955,
+        "LatencySensitivity": 0.21758631730689193,
+        "RequiredMemoryMB": 2865.0139065522208,
+        "BandwidthMbps": 12.5,
+        "NetworkLatencyMs": 11.666666666666666
+      },
+      "path_delay_ms": 5
+    },
+    {
+      "task_id": "task_09",
+      "predicted_destination": "Edge",
+      "execution_status": "SIMULATED_ONLY",
+      "selected_edge_server_id": 5,
+      "features_used": {
+        "CpuCycles": 4046611301.1221256,
+        "TaskSizeMB": 50.26381784796989,
+        "LatencySensitivity": 0.9425258452088289,
+        "RequiredMemoryMB": 2957.3913577253456,
+        "BandwidthMbps": 12.5,
+        "NetworkLatencyMs": 11.666666666666666
+      },
+      "path_delay_ms": 5
+    }
+  ]
+}

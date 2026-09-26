@@ -1,0 +1,83 @@
+{
+  "config": {
+    "experiment_id": "mlp_edgesimpy_integration_v1",
+    "dataset": "tutorials/datasets/sample_dataset2.json",
+    "user_id": 1,
+    "candidate_server_ids": [
+      2,
+      5
+    ],
+    "random_seed": 20260910
+  },
+  "summary": {
+    "total_tasks": 3,
+    "edge_predictions": 3,
+    "cloud_predictions": 0,
+    "cloud_unavailable": 0,
+    "edge_completed": 3,
+    "edge_rate": 1.0,
+    "edge_completion_rate": 1.0
+  },
+  "task_results": [
+    {
+      "task_id": "task_00",
+      "predicted_destination": "Edge",
+      "execution_status": "completed",
+      "selected_edge_server_id": 5,
+      "features_used": {
+        "CpuCycles": 7061863218.182835,
+        "TaskSizeMB": 0.25424712544541467,
+        "LatencySensitivity": 0.16370556413093362,
+        "RequiredMemoryMB": 4185.755103948194,
+        "BandwidthMbps": 12.5,
+        "NetworkLatencyMs": 11.666666666666666
+      },
+      "path_delay_ms": 5,
+      "transmission_time_s": 52.0,
+      "queue_time_s": 0.0,
+      "execution_time_s": 2.0,
+      "completion_time_s": 55.0,
+      "deadline_violation": true
+    },
+    {
+      "task_id": "task_01",
+      "predicted_destination": "Edge",
+      "execution_status": "completed",
+      "selected_edge_server_id": 5,
+      "features_used": {
+        "CpuCycles": 5746141843.797618,
+        "TaskSizeMB": 0.567409282303622,
+        "LatencySensitivity": 0.8263088912885208,
+        "RequiredMemoryMB": 622.0374892170473,
+        "BandwidthMbps": 12.5,
+        "NetworkLatencyMs": 11.666666666666666
+      },
+      "path_delay_ms": 5,
+      "transmission_time_s": 77.0,
+      "queue_time_s": 0.0,
+      "execution_time_s": 2.0,
+      "completion_time_s": 80.0,
+      "deadline_violation": true
+    },
+    {
+      "task_id": "task_02",
+      "predicted_destination": "Edge",
+      "execution_status": "completed",
+      "selected_edge_server_id": 5,
+      "features_used": {
+        "CpuCycles": 1539128957.7110708,
+        "TaskSizeMB": 0.13011309142139732,
+        "LatencySensitivity": 0.6940537141872457,
+        "RequiredMemoryMB": 4879.741329758609,
+        "BandwidthMbps": 12.5,
+        "NetworkLatencyMs": 11.666666666666666
+      },
+      "path_delay_ms": 5,
+      "transmission_time_s": 31.0,
+      "queue_time_s": 0.0,
+      "execution_time_s": 2.0,
+      "completion_time_s": 34.0,
+      "deadline_violation": true
+    }
+  ]
+}

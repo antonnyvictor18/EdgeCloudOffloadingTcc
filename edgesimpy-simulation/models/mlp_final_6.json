@@ -1,0 +1,35 @@
+{
+  "config": {
+    "hidden_neurons": 18,
+    "learning_rate": 0.04,
+    "epochs": 35,
+    "seed": 11
+  },
+  "normalizer_params": {
+    "feature_names": [
+      "feature_0",
+      "feature_1",
+      "feature_2",
+      "feature_3",
+      "feature_4",
+      "feature_5"
+    ],
+    "mins": [
+      50515619.26981,
+      0.1,
+      1e-05,
+      64.17229,
+      2.00107,
+      2.04958
+    ],
+    "maxs": [
+      7999354362.53406,
+      149.99117,
+      0.99991,
+      6143.7911,
+      999.14197,
+      179.93585
+    ]
+  },
+  "is_fitted": true
+}

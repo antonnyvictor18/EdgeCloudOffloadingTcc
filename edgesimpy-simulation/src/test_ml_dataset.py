@@ -17,7 +17,7 @@ def main() -> int:
     first = load_offloading_dataset(source, source_seed=42, split_seed=43)
     second = load_offloading_dataset(source, source_seed=42, split_seed=43)
 
-    assert len(FEATURE_NAMES) == 5
+    assert len(FEATURE_NAMES) == 6
     assert first.metadata.label_source == "analytical_simulator"
     assert first.metadata.feature_names == FEATURE_NAMES
     assert not set(FEATURE_NAMES) & FORBIDDEN_FEATURE_NAMES

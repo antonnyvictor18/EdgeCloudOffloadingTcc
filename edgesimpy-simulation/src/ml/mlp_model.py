@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
 
 from .dataset import VALID_LABELS
-from .preprocessing import MinMaxNormalizer
+from .preprocessing import MinMaxNormalizer, NormalizationParams
 
 
 @dataclass(frozen=True)
@@ -151,6 +152,74 @@ class MLPModel:
         return self._config
 
     @property
+    def normalizer(self) -> MinMaxNormalizer:
+        """Get the normalizer instance."""
+        return self._normalizer
+
+    @property
     def normalizer_params(self) -> Any:
         """Get normalizer parameters."""
         return self._normalizer.params.to_dict() if self._is_fitted else None
+
+    def save(self, path: Path) -> None:
+        """Save model weights and normalizer parameters to disk.
+
+        Args:
+            path: Path to save the model (without extension)
+        """
+        if not self._is_fitted:
+            raise ValueError("Model must be fitted before saving")
+
+        import json
+
+        model_dir = path.parent
+        model_dir.mkdir(parents=True, exist_ok=True)
+
+        # Save weights as numpy arrays
+        weights_path = path.with_suffix(".npz")
+        np.savez(
+            weights_path,
+            w1=self._w1,
+            b1=self._b1,
+            w2=self._w2,
+            b2=self._b2,
+        )
+
+        # Save config and normalizer params as JSON
+        metadata = {
+            "config": self._config.to_dict(),
+            "normalizer_params": self.normalizer_params,
+            "is_fitted": self._is_fitted,
+        }
+
+        metadata_path = path.with_suffix(".json")
+        with open(metadata_path, "w", encoding="utf-8") as f:
+            json.dump(metadata, f, indent=2)
+
+    def load(self, path: Path) -> None:
+        """Load model weights and normalizer parameters from disk.
+
+        Args:
+            path: Path to load the model from (without extension)
+        """
+        import json
+
+        # Load metadata
+        metadata_path = path.with_suffix(".json")
+        with open(metadata_path, "r", encoding="utf-8") as f:
+            metadata = json.load(f)
+
+        # Load weights
+        weights_path = path.with_suffix(".npz")
+        weights = np.load(weights_path)
+
+        self._w1 = weights["w1"]
+        self._b1 = weights["b1"]
+        self._w2 = weights["w2"]
+        self._b2 = float(weights["b2"])
+
+        # Restore normalizer params
+        normalizer_params_dict = metadata["normalizer_params"]
+        self._normalizer._params = NormalizationParams.from_dict(normalizer_params_dict)
+
+        self._is_fitted = metadata["is_fitted"]

@@ -1,4 +1,4 @@
-"""Reproducible, leakage-aware preparation of the C# offloading dataset."""
+"""Dataset loader that includes all features from the CSV (for feature set analysis)."""
 
 from __future__ import annotations
 
@@ -11,45 +11,28 @@ from pathlib import Path
 from statistics import mean
 from typing import Any, Iterable
 
-# Final feature set for MLP: causal features observable in EdgeSimPy at decision time
-# Updated from 5 features to 6 features based on causal analysis (see results/analise_feature_set.md)
-FEATURE_NAMES = (
+# Full feature set from the CSV
+FULL_FEATURE_NAMES = (
     "CpuCycles",
     "TaskSizeMB",
+    "DeadlineMs",
     "LatencySensitivity",
     "RequiredMemoryMB",
+    "EdgeCpuUsagePercent",
+    "EdgeMemoryUsagePercent",
+    "EdgeQueueSize",
     "BandwidthMbps",
     "NetworkLatencyMs",
+    "CloudCpuUsagePercent",
+    "CloudQueueSize",
 )
 
-# These are valid future context extensions, but absent from the current CSV contract.
-EDGE_SIMPY_CONTEXT_FEATURES = (
-    "path_delay_ms",
-    "admitted_task_count",
-)
-
-FORBIDDEN_FEATURE_NAMES = frozenset(
-    {
-        "ExecutionTimeEdge",
-        "ExecutionTimeCloud",
-        "TotalResponseTimeEdge",
-        "TotalResponseTimeCloud",
-        "BestDestination",
-        "completion_time",
-        "completion_time_s",
-        "queue_time",
-        "queue_time_s",
-        "deadline_violation",
-        "DeadlineMs",  # Excluded: not causal in analytical formula
-    }
-)
 VALID_LABELS = frozenset({"Edge", "Cloud"})
-REQUIRED_SOURCE_COLUMNS = frozenset((*FEATURE_NAMES, "BestDestination", "DeadlineMs"))
 
 
 @dataclass(frozen=True)
-class DatasetMetadata:
-    """Traceability information for one prepared dataset."""
+class FullDatasetMetadata:
+    """Metadata for full dataset with all features."""
 
     dataset_version: str
     source_path: str
@@ -57,7 +40,6 @@ class DatasetMetadata:
     split_seed: int
     label_source: str
     feature_names: tuple[str, ...]
-    omitted_features: tuple[str, ...]
     sample_count: int
 
     def to_dict(self) -> dict[str, Any]:
@@ -68,14 +50,13 @@ class DatasetMetadata:
             "split_seed": self.split_seed,
             "label_source": self.label_source,
             "feature_names": list(self.feature_names),
-            "omitted_features": list(self.omitted_features),
             "sample_count": self.sample_count,
         }
 
 
 @dataclass(frozen=True)
-class SplitDataset:
-    """One reproducible split containing features, labels and sample IDs."""
+class FullSplitDataset:
+    """Split dataset with all features."""
 
     X: tuple[tuple[float, ...], ...]
     y: tuple[str, ...]
@@ -84,27 +65,25 @@ class SplitDataset:
     def __post_init__(self) -> None:
         if len(self.X) != len(self.y) or len(self.X) != len(self.sample_ids):
             raise ValueError("X, y and sample_ids must have equal length")
-        if any(len(row) != len(FEATURE_NAMES) for row in self.X):
-            raise ValueError("every feature row must match FEATURE_NAMES")
+        if any(len(row) != len(FULL_FEATURE_NAMES) for row in self.X):
+            raise ValueError("every feature row must match FULL_FEATURE_NAMES")
         if any(label not in VALID_LABELS for label in self.y):
             raise ValueError("invalid label in split")
 
 
 @dataclass(frozen=True)
-class PreparedDataset:
-    """Prepared X/y data with deterministic splits and audit metadata."""
+class FullPreparedDataset:
+    """Prepared dataset with all features."""
 
-    all_data: SplitDataset
-    train: SplitDataset
-    validation: SplitDataset
-    test: SplitDataset
-    metadata: DatasetMetadata
-    feature_statistics: dict[str, dict[str, float]]
+    all_data: FullSplitDataset
+    train: FullSplitDataset
+    validation: FullSplitDataset
+    test: FullSplitDataset
+    metadata: FullDatasetMetadata
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "metadata": self.metadata.to_dict(),
-            "feature_statistics": self.feature_statistics,
             "sizes": {
                 "all": len(self.all_data.y),
                 "train": len(self.train.y),
@@ -120,22 +99,17 @@ class PreparedDataset:
         }
 
 
-def load_offloading_dataset(
+def load_full_offloading_dataset(
     source_path: str | Path,
     *,
     source_seed: int | None = 42,
     split_seed: int = 43,
-    dataset_version: str = "csharp-analytical-v2-6features",
+    dataset_version: str = "csharp-analytical-full-v1",
     train_ratio: float = 0.7,
     validation_ratio: float = 0.15,
-) -> PreparedDataset:
-    """Load the current C# CSV and create reproducible stratified splits.
+) -> FullPreparedDataset:
+    """Load dataset with all features from CSV."""
 
-    The current CSV has no scenario/group identifier. Its generator creates
-    independent random samples, so row-level stratification is the documented
-    split strategy for this version. Future grouped data must provide a group
-    identifier before using this loader unchanged.
-    """
     if not 0 < train_ratio < 1 or not 0 <= validation_ratio < 1:
         raise ValueError("split ratios must be between zero and one")
     if train_ratio + validation_ratio >= 1:
@@ -150,23 +124,21 @@ def load_offloading_dataset(
         validation_ratio=validation_ratio,
         seed=split_seed,
     )
-    metadata = DatasetMetadata(
+    metadata = FullDatasetMetadata(
         dataset_version=dataset_version,
         source_path=str(path),
         source_seed=source_seed,
         split_seed=split_seed,
         label_source="analytical_simulator",
-        feature_names=FEATURE_NAMES,
-        omitted_features=tuple(sorted((*EDGE_SIMPY_CONTEXT_FEATURES, *FORBIDDEN_FEATURE_NAMES))),
+        feature_names=FULL_FEATURE_NAMES,
         sample_count=len(all_data.y),
     )
-    return PreparedDataset(
+    return FullPreparedDataset(
         all_data=all_data,
         train=train,
         validation=validation,
         test=test,
         metadata=metadata,
-        feature_statistics=_feature_statistics(all_data.X),
     )
 
 
@@ -174,22 +146,20 @@ def _read_rows(path: Path) -> list[dict[str, str]]:
     with path.open("r", encoding="utf-8-sig", newline="") as handle:
         reader = csv.DictReader(handle)
         columns = set(reader.fieldnames or [])
-        missing = REQUIRED_SOURCE_COLUMNS - columns
+        missing = {"BestDestination"} - columns
         if missing:
             raise ValueError(f"source CSV is missing columns: {sorted(missing)}")
-        forbidden = columns & FORBIDDEN_FEATURE_NAMES
-        # Result columns are allowed in the source file, but never copied into X.
         if not reader.fieldnames:
             raise ValueError("source CSV has no header")
         return list(reader)
 
 
-def _to_split(rows: Iterable[dict[str, str]]) -> SplitDataset:
+def _to_split(rows: Iterable[dict[str, str]]) -> FullSplitDataset:
     features: list[tuple[float, ...]] = []
     labels: list[str] = []
     sample_ids: list[int] = []
     for sample_id, row in enumerate(rows):
-        values = tuple(float(row[name]) for name in FEATURE_NAMES)
+        values = tuple(float(row[name]) for name in FULL_FEATURE_NAMES)
         if any(not math.isfinite(value) for value in values):
             raise ValueError(f"sample {sample_id} contains a non-finite feature")
         label = row["BestDestination"]
@@ -200,16 +170,16 @@ def _to_split(rows: Iterable[dict[str, str]]) -> SplitDataset:
         sample_ids.append(sample_id)
     if not features:
         raise ValueError("source dataset is empty")
-    return SplitDataset(tuple(features), tuple(labels), tuple(sample_ids))
+    return FullSplitDataset(tuple(features), tuple(labels), tuple(sample_ids))
 
 
 def _stratified_split(
-    data: SplitDataset,
+    data: FullSplitDataset,
     *,
     train_ratio: float,
     validation_ratio: float,
     seed: int,
-) -> tuple[SplitDataset, SplitDataset, SplitDataset]:
+) -> tuple[FullSplitDataset, FullSplitDataset, FullSplitDataset]:
     randomizer = random.Random(seed)
     buckets: dict[str, list[int]] = {label: [] for label in VALID_LABELS}
     for index, label in enumerate(data.y):
@@ -227,24 +197,13 @@ def _stratified_split(
     for indices in assignments.values():
         randomizer.shuffle(indices)
 
-    return tuple(_select(data, assignments[name]) for name in ("train", "validation", "test"))  # type: ignore[return-value]
+    return tuple(_select(data, assignments[name]) for name in ("train", "validation", "test"))
 
 
-def _select(data: SplitDataset, indices: Iterable[int]) -> SplitDataset:
+def _select(data: FullSplitDataset, indices: Iterable[int]) -> FullSplitDataset:
     selected = list(indices)
-    return SplitDataset(
+    return FullSplitDataset(
         tuple(data.X[index] for index in selected),
         tuple(data.y[index] for index in selected),
         tuple(data.sample_ids[index] for index in selected),
     )
-
-
-def _feature_statistics(rows: tuple[tuple[float, ...], ...]) -> dict[str, dict[str, float]]:
-    return {
-        name: {
-            "min": min(row[index] for row in rows),
-            "max": max(row[index] for row in rows),
-            "mean": mean(row[index] for row in rows),
-        }
-        for index, name in enumerate(FEATURE_NAMES)
-    }

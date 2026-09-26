@@ -1,0 +1,239 @@
+{
+  "dataset_info": {
+    "metadata": {
+      "dataset_version": "csharp-analytical-full-v1",
+      "source_path": "C:\\Users\\Antonny\\Repositorio\\EdgeCloudOffloadingTcc\\Dataset\\dataset.csv",
+      "source_seed": 42,
+      "split_seed": 43,
+      "label_source": "analytical_simulator",
+      "feature_names": [
+        "CpuCycles",
+        "TaskSizeMB",
+        "DeadlineMs",
+        "LatencySensitivity",
+        "RequiredMemoryMB",
+        "EdgeCpuUsagePercent",
+        "EdgeMemoryUsagePercent",
+        "EdgeQueueSize",
+        "BandwidthMbps",
+        "NetworkLatencyMs",
+        "CloudCpuUsagePercent",
+        "CloudQueueSize"
+      ],
+      "sample_count": 15000
+    },
+    "sizes": {
+      "all": 15000,
+      "train": 10500,
+      "validation": 2250,
+      "test": 2250
+    },
+    "class_counts": {
+      "all": {
+        "Cloud": 5638,
+        "Edge": 9362
+      },
+      "train": {
+        "Edge": 6553,
+        "Cloud": 3947
+      },
+      "validation": {
+        "Edge": 1404,
+        "Cloud": 846
+      },
+      "test": {
+        "Edge": 1405,
+        "Cloud": 845
+      }
+    }
+  },
+  "variants": {
+    "current": {
+      "feature_names": [
+        "CpuCycles",
+        "TaskSizeMB",
+        "DeadlineMs",
+        "LatencySensitivity",
+        "RequiredMemoryMB"
+      ],
+      "feature_count": 5,
+      "validation": {
+        "accuracy": 0.7493333333333333,
+        "precision_edge": 0.7777777777777778,
+        "recall_edge": 0.8376068376068376,
+        "f1_edge": 0.8065843621399177,
+        "precision_cloud": 0.6910569105691057,
+        "recall_cloud": 0.6028368794326241,
+        "f1_cloud": 0.6439393939393939,
+        "confusion_matrix": [
+          [
+            510,
+            336
+          ],
+          [
+            228,
+            1176
+          ]
+        ],
+        "prediction_distribution": {
+          "Edge": 1512,
+          "Cloud": 738
+        }
+      },
+      "test": {
+        "accuracy": 0.7346666666666667,
+        "precision_edge": 0.771505376344086,
+        "recall_edge": 0.8170818505338078,
+        "f1_edge": 0.7936398202557898,
+        "precision_cloud": 0.6627296587926509,
+        "recall_cloud": 0.5976331360946746,
+        "f1_cloud": 0.6285003111387679,
+        "confusion_matrix": [
+          [
+            505,
+            340
+          ],
+          [
+            257,
+            1148
+          ]
+        ],
+        "prediction_distribution": {
+          "Edge": 1488,
+          "Cloud": 762
+        }
+      },
+      "config": {
+        "hidden_neurons": 18,
+        "learning_rate": 0.04,
+        "epochs": 35,
+        "seed": 11
+      }
+    },
+    "no_deadline": {
+      "feature_names": [
+        "CpuCycles",
+        "TaskSizeMB",
+        "LatencySensitivity",
+        "RequiredMemoryMB"
+      ],
+      "feature_count": 4,
+      "validation": {
+        "accuracy": 0.7537777777777778,
+        "precision_edge": 0.7863881401617251,
+        "recall_edge": 0.8311965811965812,
+        "f1_edge": 0.8081717451523546,
+        "precision_cloud": 0.6906005221932114,
+        "recall_cloud": 0.6252955082742316,
+        "f1_cloud": 0.6563275434243176,
+        "confusion_matrix": [
+          [
+            529,
+            317
+          ],
+          [
+            237,
+            1167
+          ]
+        ],
+        "prediction_distribution": {
+          "Edge": 1484,
+          "Cloud": 766
+        }
+      },
+      "test": {
+        "accuracy": 0.7351111111111112,
+        "precision_edge": 0.7768651608487337,
+        "recall_edge": 0.8078291814946619,
+        "f1_edge": 0.7920446615491975,
+        "precision_cloud": 0.6577946768060836,
+        "recall_cloud": 0.6142011834319526,
+        "f1_cloud": 0.6352509179926561,
+        "confusion_matrix": [
+          [
+            519,
+            326
+          ],
+          [
+            270,
+            1135
+          ]
+        ],
+        "prediction_distribution": {
+          "Edge": 1461,
+          "Cloud": 789
+        }
+      },
+      "config": {
+        "hidden_neurons": 18,
+        "learning_rate": 0.04,
+        "epochs": 35,
+        "seed": 11
+      }
+    },
+    "causal_observable": {
+      "feature_names": [
+        "CpuCycles",
+        "TaskSizeMB",
+        "DeadlineMs",
+        "LatencySensitivity",
+        "RequiredMemoryMB",
+        "BandwidthMbps",
+        "NetworkLatencyMs"
+      ],
+      "feature_count": 7,
+      "validation": {
+        "accuracy": 0.8124444444444444,
+        "precision_edge": 0.8238786279683378,
+        "recall_edge": 0.8896011396011396,
+        "f1_edge": 0.8554794520547945,
+        "precision_cloud": 0.7888283378746594,
+        "recall_cloud": 0.6843971631205674,
+        "f1_cloud": 0.7329113924050633,
+        "confusion_matrix": [
+          [
+            579,
+            267
+          ],
+          [
+            155,
+            1249
+          ]
+        ],
+        "prediction_distribution": {
+          "Edge": 1516,
+          "Cloud": 734
+        }
+      },
+      "test": {
+        "accuracy": 0.8124444444444444,
+        "precision_edge": 0.8336727766463,
+        "recall_edge": 0.8740213523131672,
+        "f1_edge": 0.8533703961084086,
+        "precision_cloud": 0.7722007722007722,
+        "recall_cloud": 0.7100591715976331,
+        "f1_cloud": 0.7398273736128237,
+        "confusion_matrix": [
+          [
+            600,
+            245
+          ],
+          [
+            177,
+            1228
+          ]
+        ],
+        "prediction_distribution": {
+          "Edge": 1473,
+          "Cloud": 777
+        }
+      },
+      "config": {
+        "hidden_neurons": 18,
+        "learning_rate": 0.04,
+        "epochs": 35,
+        "seed": 11
+      }
+    }
+  }
+}

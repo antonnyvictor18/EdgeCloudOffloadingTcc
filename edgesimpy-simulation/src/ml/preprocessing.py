@@ -7,8 +7,6 @@ from typing import Any
 
 import numpy as np
 
-from .dataset import FEATURE_NAMES
-
 
 @dataclass(frozen=True)
 class NormalizationParams:
@@ -24,6 +22,15 @@ class NormalizationParams:
             "mins": self.mins.tolist(),
             "maxs": self.maxs.tolist(),
         }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "NormalizationParams":
+        """Create NormalizationParams from dictionary."""
+        return cls(
+            mins=np.array(data["mins"]),
+            maxs=np.array(data["maxs"]),
+            feature_names=tuple(data["feature_names"]),
+        )
 
 
 @dataclass(frozen=True)
@@ -50,8 +57,8 @@ class MinMaxNormalizer:
 
     def fit(self, X: np.ndarray) -> None:
         """Fit normalization parameters on training data."""
-        if X.shape[1] != len(FEATURE_NAMES):
-            raise ValueError(f"Expected {len(FEATURE_NAMES)} features, got {X.shape[1]}")
+        if X.shape[1] < 1:
+            raise ValueError("X must have at least 1 feature")
 
         mins = X.min(axis=0)
         maxs = X.max(axis=0)
@@ -63,18 +70,13 @@ class MinMaxNormalizer:
         self._params = NormalizationParams(
             mins=mins,
             maxs=maxs,
-            feature_names=FEATURE_NAMES,
+            feature_names=tuple(f"feature_{i}" for i in range(X.shape[1])),
         )
 
     def transform(self, X: np.ndarray) -> np.ndarray:
         """Apply normalization using fitted parameters."""
         if self._params is None:
             raise ValueError("Normalizer must be fitted before transform")
-
-        if X.shape[1] != len(self._params.feature_names):
-            raise ValueError(
-                f"Expected {len(self._params.feature_names)} features, got {X.shape[1]}"
-            )
 
         normalized = (X - self._params.mins) / (self._params.maxs - self._params.mins)
         return np.clip(normalized, 0.0, 1.0)
