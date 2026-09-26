@@ -3623,3 +3623,169 @@ FEATURE_NAMES = (
 3. Comparar vs baselines (Random, Rule, Heuristic)
 
 NÃO fazer ainda: tuning de WiSARD/MLP, Cloud, cross-validation, grid search.
+
+## 33. Fase 14: Integração completa do MLP com EdgeSimPy (08/09/2026)
+
+**Objetivo:** Integrar o modelo `MLP_final_6` treinado com o EdgeSimPy para avaliar as consequências sistêmicas das decisões Edge/Cloud em um ambiente de simulação de eventos discretos.
+
+### Contexto metodológico
+
+A integração segue a arquitetura estabelecida:
+
+```text
+Task → Feature Extraction → MLP_final_6 → Edge/Cloud
+                                         ↓
+                                    if Edge:
+                                        NearestServerPolicy
+                                        ↓
+                                        EdgeServer
+                                        ↓
+                                        TaskNetworkFlow
+                                        ↓
+                                        TaskScheduler
+                                        ↓
+                                        Execution
+```
+
+### Implementação realizada
+
+**Arquivos criados:**
+
+- `src/experimento_mlp_edgesimpy.py`: Primeira integração controlada do MLP
+- `src/policies/ml_offloading.py`: Política MLP que faz decisão Edge/Cloud e delega seleção de servidor ao NearestServerPolicy
+- `src/integration/task_scheduler_integration.py`: Integração existente mantida
+- `src/integration/task_network_flow.py`: Comunicação de rede existente mantida
+
+**Arquivos modificados:**
+
+- `src/ml/mlp_model.py`: Adicionado save/load de modelo e normalizador
+- `models/mlp_final_6.npz`: Pesos do modelo serializados
+- `models/mlp_final_6.json`: Parâmetros de normalização serializados
+
+### Descoberta crítica: MLP Edge Bias
+
+**Problema identificado:** O MLP_final_6 aprendeu a prever **sempre Edge**, mesmo quando o workload contém 50% de labels Cloud.
+
+**Evidências:**
+
+- Workload de 20 tasks: 10 Edge + 10 Cloud labels
+- Predições: 20 Edge + 0 Cloud (100% bias para Edge)
+- Accuracy: 50% (equivalente a chute aleatório no workload balanceado)
+- Todos os erros foram Cloud → Edge (10 casos)
+
+**Análise da causa:**
+
+- O modelo atinge 83.20% accuracy no conjunto de teste porque há mais Edge (9362) que Cloud (5638) no dataset
+- As features podem não ser suficientemente discriminativas para distinguir casos Cloud
+- O simulador analítico pode favorecer Edge na maioria dos casos
+- O modelo aprendeu a estratégia "sempre Edge" que maximiza accuracy no dataset desbalanceado
+
+### Avaliação sistêmica comparativa
+
+**Arquivo criado:** `src/experimento_comparativo_sistemico.py`
+
+**Metodologia:**
+
+- Comparação de 5 políticas: Random, Nearest, LeastLoaded, Hybrid, MLP
+- Workloads: 1, 2, 3, 5, 8 tasks
+- Random: 5 seeds (11, 22, 33, 44, 55)
+- Políticas determinísticas: seed fixa 20260907
+- Candidatos: EdgeServers 2 e 5
+- Processing rate: 50 cycles/s
+
+**Resultados principais:**
+
+| Política | Exec. Coverage | Mean Completion | P95 | Max | Deadline Violation |
+|----------|----------------|-----------------|-----|-----|-------------------|
+| Random | 100% | 42.8s | 60.0s | 62.0s | 95% |
+| Nearest | 100% | 75.0s | n/a | 82.0s | 100% |
+| LeastLoaded | 100% | 38.0s | n/a | 41.0s | 100% |
+| Hybrid | 100% | 38.0s | n/a | 41.0s | 100% |
+| MLP | 100% | 75.0s | n/a | 82.0s | 100% |
+
+**Interpretação:**
+
+- **MLP = Nearest**: Como o MLP sempre prediz Edge, ele delega a seleção de servidor ao NearestServerPolicy, resultando no mesmo comportamento sistêmico
+- **LeastLoaded = Hybrid**: Ambas distribuem carga entre E2 e E5, evitando concentração
+- **Random**: Performance intermediária devido à aleatoriedade das escolhas
+
+### Avaliação com workload representativo
+
+**Arquivo criado:** `src/experimento_mlp_workload_representativo.py`
+
+**Metodologia:**
+
+- Workload fixo de 20 tasks selecionado do conjunto de **validação** (não teste)
+- Composição: 50% Edge + 50% Cloud (10 cada)
+- Seed de seleção: 20261001
+- Sample IDs fixos: [17, 433, 955, 1943, 3704, 5750, 5969, 6141, 6779, 8181, 8378, 8743, 11071, 11312, 11695, 11814, 12387, 12444, 13435, 13549]
+
+**Resultados:**
+
+| Métrica | Valor |
+|---------|-------|
+| Total Tasks | 20 |
+| Edge Labels | 10 (50%) |
+| Cloud Labels | 10 (50%) |
+| Edge Predictions | 20 (100%) |
+| Cloud Predictions | 0 (0%) |
+| Executed Tasks | 20 |
+| Execution Coverage | 100% |
+| Accuracy | 50.0% |
+
+**Análise dos erros:**
+
+- Edge → Cloud: 0 erros
+- Cloud → Edge: 10 erros (todos os Cloud foram classificados como Edge)
+- Confusion Matrix: [[10, 0], [10, 0]]
+
+### Limitações identificadas
+
+1. **Modelo não faz decisões Edge/Cloud**: O MLP aprendeu a sempre prever Edge, impossibilitando teste do caminho Cloud
+
+2. **CLOUD_UNAVAILABLE não testado**: Como nenhuma task foi prevista como Cloud, o comportamento de Cloud indisponível não foi validado
+
+3. **Features podem não ser discriminativas**: O conjunto de 6 features pode não capturar as diferenças entre decisões Edge/Cloud ótimas
+
+4. **Dataset desbalanceado**: A predominância de Edge (62%) pode ter enviesado o treinamento
+
+5. **Circularidade metodológica**: O modelo aprende a fórmula analítica, não a física real do sistema
+
+### Validações e regressões
+
+**Testes executados com sucesso:**
+
+- `test_ml_dataset.py`: PASS (contrato de 6 features validado)
+- `test_ml_models.py`: PASS (todos os testes ML passaram)
+- `test_task_scheduler_with_network.py`: PASS (10/10 validações)
+- `experimento_offloading_destinos.py`: PASS
+- `experimento_multiplas_tasks.py`: PASS
+- `experimento_robustez_politicas.py`: PASS
+- `experimento_heuristica_offloading.py`: PASS
+- `experimento_sensibilidade_heuristica.py`: PASS
+
+### Conclusões metodológicas
+
+1. **Integração técnica bem-sucedida**: O pipeline MLP → EdgeSimPy funciona corretamente, com serialização de modelo, execução de Tasks e coleta de métricas sistêmicas
+
+2. **Limitação do modelo revelada**: A avaliação representativa expõe que o MLP não aprendeu a distinguir casos Edge/Cloud, apesar de alta accuracy no dataset desbalanceado
+
+3. **Separação de responsabilidades mantida**: A arquitetura preserva a separação entre decisão (MLP), seleção de servidor (Nearest) e execução (EdgeSimPy)
+
+4. **Metodologia rigorosa**: O uso de workload representativo do conjunto de validação evita contaminação do conjunto de teste
+
+5. **Base para futuras melhorias**: A descoberta do bias Edge direciona investigações sobre discriminabilidade das features e adequação do modelo
+
+### Próximas etapas recomendadas
+
+1. **Investigar causa do bias Edge**: Analisar se as features são realmente discriminativas ou se há problema no treinamento
+
+2. **Implementar Cloud no EdgeSimPy**: Permitir execução de tasks previstas como Cloud para testar o pipeline completo
+
+3. **Análise de features**: Avaliar se features adicionais ou diferentes poderiam melhorar a distinção Edge/Cloud
+
+4. **Considerar modelos alternativos**: Explorar outras arquiteturas ou abordagens que possam capturar melhor a decisão Edge/Cloud
+
+5. **Validação com conjunto de teste**: Após resolver o bias Edge, avaliar o modelo no conjunto de teste intocado
+
+**NÃO avançar automaticamente para**: implementação de Cloud, WiSARD, tuning de hiperparâmetros, ou novas features.
