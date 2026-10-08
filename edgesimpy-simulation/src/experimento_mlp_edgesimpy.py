@@ -60,7 +60,8 @@ class ExperimentConfig:
     task_required_memory_mb: float = 100.0
     task_deadline_ms: float = 20_000.0
     task_latency_sensitivity: float = 0.5
-    processing_rate_cycles_per_second: float = 50.0  # Reduced for faster execution
+    # 12 GHz, matching the C# analytical Edge capacity (EdgeCapacityCyclesPerMs)
+    processing_rate_cycles_per_second: float = 12_000_000_000.0
 
     # Model parameters (matching MLP_final_6)
     mlp_hidden_neurons: int = 18
@@ -68,8 +69,10 @@ class ExperimentConfig:
     mlp_epochs: int = 35
     mlp_seed: int = 11
 
-    # Processing rate (cycles per second)
-    processing_rate_cycles_per_second: float = 50.0  # Reduced for faster execution
+    # Processing rate (cycles per second) - matches C# EdgeCapacityCyclesPerMs
+    # (12_000_000 cycles/ms = 12 GHz); 50 cycles/s made dataset-scale tasks
+    # take ~10^8 s and never complete.
+    processing_rate_cycles_per_second: float = 12_000_000_000.0
 
 
 @dataclass
@@ -131,6 +134,11 @@ def make_sample_tasks(config: ExperimentConfig, user: Any, count: int) -> List[T
         task_size_mb = random_gen.uniform(0.001, 1.0)  # Very small for fast simulation
         latency_sensitivity = random_gen.uniform(0, 1)
         required_memory_mb = random_gen.uniform(64, 6144)
+        # WAN conditions (user->Cloud) sampled like the C# generator:
+        # BandwidthMbps ~ LogUniform(2,1000), NetworkLatencyMs ~ Uniform(2,180)
+        import math
+        bandwidth_mbps = math.exp(random_gen.uniform(math.log(2), math.log(1000)))
+        network_latency_ms = random_gen.uniform(2, 180)
 
         task = Task(
             task_id=f"task_{i:02d}",
@@ -140,6 +148,8 @@ def make_sample_tasks(config: ExperimentConfig, user: Any, count: int) -> List[T
             deadline_ms=config.task_deadline_ms,
             latency_sensitivity=latency_sensitivity,
             required_memory_mb=required_memory_mb,
+            bandwidth_mbps=bandwidth_mbps,
+            network_latency_ms=network_latency_ms,
             creation_time_s=0.0,
         )
         tasks.append(task)
@@ -258,7 +268,7 @@ def run_mlp_integration_experiment(config: ExperimentConfig) -> ExperimentResult
         print(f"Processing task: {task.task_id}")
         print(f"{'='*60}")
 
-        # Store characteristics for recreation
+        # Store characteristics for recreation (all decision-relevant props)
         task_char = {
             "task_id": task.task_id,
             "cpu_cycles": task.cpu_cycles,
@@ -266,6 +276,8 @@ def run_mlp_integration_experiment(config: ExperimentConfig) -> ExperimentResult
             "deadline_ms": task.deadline_ms,
             "latency_sensitivity": task.latency_sensitivity,
             "required_memory_mb": task.required_memory_mb,
+            "bandwidth_mbps": task.bandwidth_mbps,
+            "network_latency_ms": task.network_latency_ms,
         }
         task_characteristics.append(task_char)
 
@@ -357,14 +369,18 @@ def run_mlp_integration_experiment(config: ExperimentConfig) -> ExperimentResult
                 print(f"Warning: Server {selected_server_id} not found in execution simulator")
                 continue
 
+            # PRESERVE ORIGINAL TASK PROPERTIES - Critical fix
+            # The decision was made on original task, so execute the same task
             task = Task(
                 task_id=task_char["task_id"],
                 user=user,
-                cpu_cycles=config.task_cpu_cycles,  # Use config value for fast execution
-                data_size_mb=task_char["data_size_mb"],
+                cpu_cycles=task_char["cpu_cycles"],  # Preserve original (decision was made on this)
+                data_size_mb=task_char["data_size_mb"],  # Preserve original (decision was made on this)
                 deadline_ms=task_char["deadline_ms"],
                 latency_sensitivity=task_char["latency_sensitivity"],
                 required_memory_mb=task_char["required_memory_mb"],
+                bandwidth_mbps=task_char["bandwidth_mbps"],  # WAN scenario condition
+                network_latency_ms=task_char["network_latency_ms"],  # WAN scenario condition
                 creation_time_s=0.0,
             )
             task.target_server = selected_server

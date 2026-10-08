@@ -52,17 +52,24 @@ class RepresentativeWorkloadConfig:
     tick_duration_s: float = 1.0
     bandwidth_algorithm: str = "max_min_fairness"
 
-    # Task parameters for EdgeSimPy execution
+    # Task parameters for EdgeSimPy execution (fallback when dataset value absent)
     task_data_size_mb: float = 0.1
     task_cpu_cycles: float = 100.0
     task_required_memory_mb: float = 100.0
     task_deadline_ms: float = 20_000.0
     task_latency_sensitivity: float = 0.5
-    processing_rate_cycles_per_second: float = 50.0
+    # 12 GHz, matching the C# analytical model (EdgeCapacityCyclesPerMs = 12_000_000)
+    processing_rate_cycles_per_second: float = 12_000_000_000.0
+    max_simulation_steps: int = 100_000
 
-    # Workload selection
+    # Frozen workload: exact dataset sample IDs (CSV row indices) selected in
+    # the original representative-workload experiment. Do not re-select.
+    frozen_sample_ids: tuple[int, ...] = (
+        17, 433, 955, 1943, 3704, 5750, 5969, 6141, 6779, 8181,
+        8378, 8743, 11071, 11312, 11695, 11814, 12387, 12444, 13435, 13549,
+    )
+    selection_seed: int = 20261001  # Historical seed that produced frozen_sample_ids
     workload_size: int = 20  # Fixed workload size
-    selection_seed: int = 20261001  # Seed for workload selection
     edge_ratio: float = 0.5  # Target 50% Edge, 50% Cloud
 
     # Model parameters
@@ -173,49 +180,33 @@ class RepresentativeWorkloadEvaluator:
         dataset = load_offloading_dataset(dataset_path, source_seed=42, split_seed=43)
 
         print(f"Dataset loaded: {dataset.metadata.sample_count} samples")
-        print(f"Validation set: {len(dataset.validation.y)} samples")
 
-        # Get validation set labels and sample IDs
-        val_labels = dataset.validation.y
-        val_sample_ids = dataset.validation.sample_ids
-        val_features = dataset.validation.X
+        # Use the FROZEN workload sample IDs (dataset-wide CSV row indices).
+        # The workload was frozen in the original experiment; samples must not
+        # be re-selected or replaced.
+        frozen_ids = list(self.config.frozen_sample_ids)
 
-        # Separate by class
-        edge_indices = [i for i, label in enumerate(val_labels) if label == "Edge"]
-        cloud_indices = [i for i, label in enumerate(val_labels) if label == "Cloud"]
+        id_to_index = {sid: i for i, sid in enumerate(dataset.all_data.sample_ids)}
+        missing = [sid for sid in frozen_ids if sid not in id_to_index]
+        if missing:
+            raise ValueError(f"Frozen sample IDs missing from dataset: {missing}")
 
-        print(f"Validation Edge samples: {len(edge_indices)}")
-        print(f"Validation Cloud samples: {len(cloud_indices)}")
+        selected_indices = [id_to_index[sid] for sid in frozen_ids]
 
-        # Calculate target counts
-        target_edge_count = int(self.config.workload_size * self.config.edge_ratio)
-        target_cloud_count = self.config.workload_size - target_edge_count
-
-        print(f"Target workload: {target_edge_count} Edge, {target_cloud_count} Cloud")
-
-        # Select samples using fixed seed (deterministic selection)
-        random_gen = random.Random(self.config.selection_seed)
-
-        # Shuffle indices for random selection
-        random_gen.shuffle(edge_indices)
-        random_gen.shuffle(cloud_indices)
-
-        # Select samples
-        selected_edge_indices = edge_indices[:target_edge_count]
-        selected_cloud_indices = cloud_indices[:target_cloud_count]
-
-        # Combine and sort by sample_id for consistency
-        selected_indices = selected_edge_indices + selected_cloud_indices
-        selected_indices.sort(key=lambda i: val_sample_ids[i])
-
-        # Store workload information
-        self.results.workload_sample_ids = [val_sample_ids[i] for i in selected_indices]
-        self.results.workload_labels = [val_labels[i] for i in selected_indices]
-        self.workload_features = [val_features[i] for i in selected_indices]
+        self.results.workload_sample_ids = frozen_ids
+        self.results.workload_labels = [dataset.all_data.y[i] for i in selected_indices]
+        self.workload_features = [dataset.all_data.X[i] for i in selected_indices]
         self.workload_indices = selected_indices
 
-        print(f"Selected workload sample IDs: {self.results.workload_sample_ids}")
-        print(f"Selected workload labels: {self.results.workload_labels}")
+        # Read per-sample DeadlineMs from the source CSV so the executed Task
+        # carries the real dataset deadline (not a synthetic config value).
+        import csv as _csv
+        with dataset_path.open("r", encoding="utf-8-sig", newline="") as handle:
+            csv_rows = list(_csv.DictReader(handle))
+        self.workload_deadlines_ms = [float(csv_rows[sid]["DeadlineMs"]) for sid in frozen_ids]
+
+        print(f"Frozen workload sample IDs: {self.results.workload_sample_ids}")
+        print(f"Frozen workload labels: {self.results.workload_labels}")
 
         # Validate workload composition
         edge_count = sum(1 for label in self.results.workload_labels if label == "Edge")
@@ -263,7 +254,10 @@ class RepresentativeWorkloadEvaluator:
             self.results.workload_labels,
             self.workload_features
         )):
-            # Create Task object with dataset features
+            # Create Task object with dataset features and the sample's own deadline.
+            # The dataset's BandwidthMbps/NetworkLatencyMs are per-scenario WAN
+            # conditions (user->Cloud path), so they travel with the Task as
+            # scenario context - not derived from the EdgeSimPy edge topology.
             task = Task(
                 task_id=f"task_{i:02d}",
                 user=user,
@@ -271,7 +265,9 @@ class RepresentativeWorkloadEvaluator:
                 data_size_mb=features[1],  # TaskSizeMB
                 latency_sensitivity=features[2],  # LatencySensitivity
                 required_memory_mb=features[3],  # RequiredMemoryMB
-                deadline_ms=self.config.task_deadline_ms,
+                bandwidth_mbps=features[4],  # BandwidthMbps (WAN scenario condition)
+                network_latency_ms=features[5],  # NetworkLatencyMs (WAN scenario condition)
+                deadline_ms=self.workload_deadlines_ms[i],
                 creation_time_s=0.0,
             )
 
@@ -339,8 +335,12 @@ class RepresentativeWorkloadEvaluator:
             simulator=execution_simulator
         )
 
-        # Recreated tasks list (will be populated below)
-        recreated_edge_tasks = []
+        # Tasks submitted for execution (the SAME Task objects used for the
+        # MLP decision - no recreation, preserving task identity)
+        submitted_tasks = []
+        # Snapshot of the properties that must remain identical between
+        # decision and execution (task identity contract)
+        decision_snapshots = {}
 
         # Define resource management algorithm
         def resource_management_algorithm(parameters):
@@ -348,23 +348,22 @@ class RepresentativeWorkloadEvaluator:
 
         # Define stopping criterion
         def stopping_criterion(model):
-            max_steps = 1000
-            return (all(t[0].status == TaskStatus.COMPLETED for t in recreated_edge_tasks)
+            max_steps = self.config.max_simulation_steps
+            return (all(t[0].status == TaskStatus.COMPLETED for t in submitted_tasks)
                     or execution_simulator.schedule.steps >= max_steps)
 
         # Set the algorithms on the existing simulator
         execution_simulator.resource_management_algorithm = resource_management_algorithm
         execution_simulator.stopping_criterion = stopping_criterion
 
-        # Get user and servers from the execution simulator (same topology)
-        user = User.find_by_id(self.config.user_id)
+        # Get servers from the execution simulator (same topology)
         edge_servers = [EdgeServer.find_by_id(sid) for sid in self.config.candidate_server_ids]
         edge_servers = [s for s in edge_servers if s is not None]
 
         # Create NearestServerPolicy for EdgeServer selection
         nearest_policy = NearestServerPolicy(topology=execution_simulator.topology)
 
-        # Recreate and submit Edge tasks
+        # Submit the SAME Task objects that the MLP decided on
         for task_info in self.edge_tasks:
             task = task_info["task"]
 
@@ -373,47 +372,66 @@ class RepresentativeWorkloadEvaluator:
                 selected_server = nearest_policy.select_server(task, edge_servers)
                 task_info["selected_server_id"] = selected_server.id
 
-                # Recreate task in execution simulator context
-                new_task = Task(
-                    task_id=task.task_id,
-                    user=user,
-                    cpu_cycles=self.config.task_cpu_cycles,  # Use config value for execution
-                    data_size_mb=self.config.task_data_size_mb,
-                    deadline_ms=task.deadline_ms,
-                    latency_sensitivity=task.latency_sensitivity,
-                    required_memory_mb=task.required_memory_mb,
-                    creation_time_s=0.0,
-                )
-                new_task.target_server = selected_server
-                recreated_edge_tasks.append((new_task, task_info, selected_server))
-                scheduler_integration.submit_task(new_task, selected_server)
+                # Snapshot decision-relevant properties before submission
+                decision_snapshots[task.task_id] = {
+                    "cpu_cycles": task.cpu_cycles,
+                    "data_size_mb": task.data_size_mb,
+                    "deadline_ms": task.deadline_ms,
+                    "latency_sensitivity": task.latency_sensitivity,
+                    "required_memory_mb": task.required_memory_mb,
+                    "bandwidth_mbps": task.bandwidth_mbps,
+                    "network_latency_ms": task.network_latency_ms,
+                }
 
-                print(f"Task {new_task.task_id}: Selected server {selected_server.id}")
+                # Submit the original task object - identity preserved
+                task.target_server = selected_server
+                submitted_tasks.append((task, task_info, selected_server))
+                scheduler_integration.submit_task(task, selected_server)
+
+                print(f"Task {task.task_id}: Selected server {selected_server.id}")
 
             except Exception as e:
                 print(f"Server selection failed for {task.task_id}: {e}")
                 task_info["execution_status"] = "SERVER_SELECTION_FAILED"
 
         # Run simulation
-        if recreated_edge_tasks:
+        if submitted_tasks:
             print("Running EdgeSimPy simulation...")
-            execution_simulator.run_model()
+            # Manual loop equivalent to Simulator.run_model(), but skipping
+            # monitor()/dump_data_to_disk() per-step overhead. step() invokes
+            # resource_management_algorithm + schedule.step() (agents incl.
+            # NetworkFlow.step and Topology.step bandwidth allocation).
+            while not stopping_criterion(execution_simulator):
+                execution_simulator.step()
             print(f"Simulation completed in {execution_simulator.schedule.steps} steps")
 
-            # Collect results for executed tasks
-            for new_task, task_info, selected_server in recreated_edge_tasks:
-                if new_task.status == TaskStatus.COMPLETED:
+            # Collect results and verify task identity was preserved
+            for task, task_info, selected_server in submitted_tasks:
+                if task.status == TaskStatus.COMPLETED:
                     task_info["execution_status"] = "EXECUTED"
-                    task_info["task"] = new_task  # Update with executed task
                 else:
                     task_info["execution_status"] = "EXECUTION_FAILED"
 
+                # Explicit identity check: the executed task must still carry
+                # the exact same properties used at decision time
+                snapshot = decision_snapshots[task.task_id]
+                mismatches = {
+                    k: (snapshot[k], getattr(task, k))
+                    for k in snapshot
+                    if getattr(task, k) != snapshot[k]
+                }
+                if mismatches:
+                    raise AssertionError(
+                        f"Task {task.task_id} properties changed between decision "
+                        f"and execution: {mismatches}"
+                    )
+
             # Calculate network metrics for executed tasks
-            for new_task, task_info, selected_server in recreated_edge_tasks:
+            for task, task_info, selected_server in submitted_tasks:
                 if task_info["execution_status"] == "EXECUTED":
                     try:
                         import networkx as nx
-                        user_switch = new_task.user.base_station.network_switch
+                        user_switch = task.user.base_station.network_switch
                         server_switch = selected_server.base_station.network_switch
                         path = nx.shortest_path(
                             G=execution_simulator.topology,
@@ -431,7 +449,7 @@ class RepresentativeWorkloadEvaluator:
                             "propagation_delay_s": path_delay_ms / 1000.0,
                         }
                     except Exception as e:
-                        print(f"Path calculation failed for {new_task.task_id}: {e}")
+                        print(f"Path calculation failed for {task.task_id}: {e}")
                         task_info["network_metrics"] = None
 
     def _calculate_metrics(self) -> None:
@@ -589,12 +607,13 @@ class RepresentativeWorkloadEvaluator:
         for task_info in self.workload_tasks:
             task = task_info["task"]
 
-            # Create fresh task for control (using same topology)
+            # Create fresh task for control - PRESERVE ORIGINAL PROPERTIES
+            # Critical fix: Use original task properties, not config values
             control_task = Task(
                 task_id=f"control_{task.task_id}",
                 user=user,
-                cpu_cycles=self.config.task_cpu_cycles,
-                data_size_mb=self.config.task_data_size_mb,
+                cpu_cycles=task.cpu_cycles,  # Preserve original from dataset
+                data_size_mb=task.data_size_mb,  # Preserve original from dataset
                 deadline_ms=task.deadline_ms,
                 latency_sensitivity=task.latency_sensitivity,
                 required_memory_mb=task.required_memory_mb,
@@ -640,9 +659,12 @@ class RepresentativeWorkloadEvaluator:
             "",
             "## Methodology",
             "",
-            "- Workload selected from validation set (not test set)",
-            "- Fixed composition: 50% Edge, 50% Cloud",
+            "- Frozen workload: exact dataset sample IDs fixed before this evaluation",
+            "- Fixed composition: 50% Edge, 50% Cloud analytical labels",
             "- Frozen MLP model (no retraining)",
+            "- Same Task object used for decision and execution (identity preserved)",
+            "- Task deadlines taken from the dataset (DeadlineMs per sample)",
+            "- Processing rate matches the C# analytical Edge capacity (12 GHz)",
             "- Edge-predicted tasks executed in EdgeSimPy",
             "- Cloud-predicted tasks marked CLOUD_UNAVAILABLE",
             "- NearestServerPolicy used as Edge-only control",
@@ -716,11 +738,11 @@ class RepresentativeWorkloadEvaluator:
         # Add execution metrics for executed tasks
         for result in self.results.task_results:
             if result.execution_status == "EXECUTED":
-                transmission = f"{result.transmission_time_s:.2f}" if result.transmission_time_s else "N/A"
-                propagation = f"{result.propagation_delay_s:.3f}" if result.propagation_delay_s else "N/A"
-                queue = f"{result.queue_time_s:.2f}" if result.queue_time_s else "N/A"
-                execution = f"{result.execution_time_s:.2f}" if result.execution_time_s else "N/A"
-                completion = f"{result.completion_time_s:.2f}" if result.completion_time_s else "N/A"
+                transmission = f"{result.transmission_time_s:.2f}" if result.transmission_time_s is not None else "N/A"
+                propagation = f"{result.propagation_delay_s:.3f}" if result.propagation_delay_s is not None else "N/A"
+                queue = f"{result.queue_time_s:.2f}" if result.queue_time_s is not None else "N/A"
+                execution = f"{result.execution_time_s:.2f}" if result.execution_time_s is not None else "N/A"
+                completion = f"{result.completion_time_s:.2f}" if result.completion_time_s is not None else "N/A"
                 deadline = "Yes" if result.deadline_violation else "No"
 
                 lines.append(
@@ -803,10 +825,15 @@ class RepresentativeWorkloadEvaluator:
             "   tasks cannot be executed and are marked CLOUD_UNAVAILABLE.",
             "2. **Execution Coverage**: The execution coverage metric is diagnostic only - it shows",
             "   how much workload can be processed with current infrastructure, not policy quality.",
-            "3. **Global Network Features**: NetworkLatencyMs and BandwidthMbps are calculated as",
-            "   global features across all EdgeServers, matching the C# dataset semantics.",
-            "4. **Representative Workload**: This workload was selected from validation set using",
-            "   a fixed rule before evaluation. Results should not be generalized to the full test set.",
+            "3. **Network Feature Semantics**: Runtime BandwidthMbps/NetworkLatencyMs are derived",
+            "   from the EdgeSimPy topology (bottleneck bandwidth and average path delay across all",
+            "   EdgeServers). In the C# dataset these columns are per-task sampled WAN parameters used",
+            "   only on the Cloud path. They are NOT the same random variables - this is a documented",
+            "   contract mismatch, not a unit-conversion issue.",
+            "4. **Frozen Workload**: Sample IDs span the full dataset (not a single split). This is",
+            "   the frozen contract from the original experiment and must not be re-selected.",
+            "5. **Processing Rate**: Edge execution uses 12 GHz to match the C# analytical",
+            "   EdgeCapacityCyclesPerMs = 12,000,000 cycles/ms.",
             "",
             "## Next Steps",
             "",

@@ -26,30 +26,30 @@ in a simulation environment and observe the consequence of Edge/Cloud decisions.
 ## Summary
 
 - **Total Tasks**: 3
-- **Edge Predictions**: 3 (100.0%)
-- **Cloud Predictions**: 0
-- **Cloud Unavailable**: 0
-- **Edge Completed**: 3
+- **Edge Predictions**: 1 (33.3%)
+- **Cloud Predictions**: 2
+- **Cloud Unavailable**: 2
+- **Edge Completed**: 1
 - **Edge Completion Rate**: 100.0%
 
 ## Task Results
 
 | Task ID | Predicted | Status | Server | Path Delay (ms) | Trans (s) | Queue (s) | Exec (s) | Complete (s) | Deadline Violation |
 | ------- | --------- | ------ | ------ | --------------- | --------- | --------- | -------- | ------------ | ----------------- |
-| task_00 | Edge | completed | 5 | 5.00 | 52.00 | N/A | 2.00 | 55.00 | Yes |
-| task_01 | Edge | completed | 5 | 5.00 | 77.00 | N/A | 2.00 | 80.00 | Yes |
-| task_02 | Edge | completed | 5 | 5.00 | 31.00 | N/A | 2.00 | 34.00 | Yes |
+| task_02 | Edge | completed | 5 | 5.00 | 7.00 | N/A | 0.25 | 9.00 | No |
+| task_00 | Cloud | CLOUD_UNAVAILABLE | N/A | N/A | N/A | N/A | N/A | N/A | N/A |
+| task_01 | Cloud | CLOUD_UNAVAILABLE | N/A | N/A | N/A | N/A | N/A | N/A | N/A |
 
 ## Feature Examples
 
 First task features used:
 
-- **CpuCycles**: 7061863218.1828
-- **TaskSizeMB**: 0.2542
-- **LatencySensitivity**: 0.1637
-- **RequiredMemoryMB**: 4185.7551
-- **BandwidthMbps**: 12.5000
-- **NetworkLatencyMs**: 11.6667
+- **CpuCycles**: 2948624783.1081
+- **TaskSizeMB**: 0.0930
+- **LatencySensitivity**: 0.7425
+- **RequiredMemoryMB**: 1595.7531
+- **BandwidthMbps**: 4.8131
+- **NetworkLatencyMs**: 50.9744
 
 ## Methodological Notes
 

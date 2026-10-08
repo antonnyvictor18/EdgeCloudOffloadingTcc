@@ -61,11 +61,12 @@ class MLPOffloadingPolicy:
     - Select specific EdgeServer (use NearestServerPolicy for that)
     - Advance the simulation clock
 
-    Feature extraction uses GLOBAL features (not destination-specific):
-    - NetworkLatencyMs: average path delay to all candidate EdgeServers
-    - BandwidthMbps: minimum bandwidth bottleneck to all candidate EdgeServers
-
-    This matches the C# dataset semantics where these are single values per sample.
+    Feature extraction order matches FEATURE_NAMES. For the two network
+    features (BandwidthMbps, NetworkLatencyMs), the policy prefers the task's
+    scenario WAN attributes (task.bandwidth_mbps / task.network_latency_ms),
+    matching the C# contract where they are per-sample user->Cloud WAN
+    conditions. If absent, it falls back to topology-derived values over all
+    EdgeServers - a documented semantic approximation, not the same variable.
     """
 
     def __init__(self, config: MLPOffloadingConfig):
@@ -137,12 +138,10 @@ class MLPOffloadingPolicy:
         # Extract features in the exact order used during training
         features, features_dict = self._extract_features(task, topology)
 
-        # Apply preprocessing (using fitted normalizer from model)
+        # Pass RAW features to model.predict() - it handles normalization internally
+        # This prevents double normalization bug discovered in parity audit
         features_array = np.array([features])
-        features_normalized = self.model.normalizer.transform(features_array)
-
-        # Predict
-        prediction = self.model.predict(features_normalized)[0]
+        prediction = self.model.predict(features_array)[0]
 
         # Determine execution status
         if prediction == "Cloud":
@@ -208,13 +207,17 @@ class MLPOffloadingPolicy:
         return features, features_dict
 
     def _get_bandwidth(self, task: Any, topology: Any) -> float:
-        """Get bandwidth as a GLOBAL feature.
+        """Get bandwidth feature.
 
-        Formula:
-        BandwidthMbps = minimum bandwidth bottleneck among all candidate EdgeServers
+        C# contract: BandwidthMbps is a per-scenario WAN condition on the
+        user->Cloud path (sampled LogUniform(2,1000)), used only in the Cloud
+        cost term. It is NOT an edge-topology property.
 
-        This matches the C# dataset semantics where BandwidthMbps is a single
-        value per sample, not per-destination.
+        Runtime semantics: prefer the task's scenario WAN condition
+        (task.bandwidth_mbps, e.g. carried from the dataset row). If absent,
+        fall back to the topology-derived approximation (minimum bandwidth
+        bottleneck among all EdgeServers) - documented as a semantic
+        mismatch, not the same variable.
 
         Args:
             task: Task with user
@@ -226,6 +229,10 @@ class MLPOffloadingPolicy:
         Raises:
             ValueError: If no network context or no EdgeServers available
         """
+        # Prefer scenario WAN condition attached to the task (dataset contract)
+        if getattr(task, "bandwidth_mbps", None) is not None:
+            return float(task.bandwidth_mbps)
+
         if task.user is None or task.user.base_station is None:
             raise ValueError("Task must have a user with base_station")
 
@@ -278,13 +285,16 @@ class MLPOffloadingPolicy:
         return min(bandwidths)
 
     def _get_network_latency(self, task: Any, topology: Any) -> float:
-        """Get network latency as a GLOBAL feature.
+        """Get network latency feature.
 
-        Formula:
-        NetworkLatencyMs = average path delay to all candidate EdgeServers
+        C# contract: NetworkLatencyMs is a per-scenario WAN latency on the
+        user->Cloud path (sampled Uniform(2,180)), used only in the Cloud
+        cost term. It is NOT an edge-topology property.
 
-        This matches the C# dataset semantics where NetworkLatencyMs is a
-        single value per sample, not per-destination.
+        Runtime semantics: prefer the task's scenario WAN latency
+        (task.network_latency_ms). If absent, fall back to the topology-
+        derived approximation (average path delay among all EdgeServers) -
+        documented as a semantic mismatch, not the same variable.
 
         Args:
             task: Task with user
@@ -296,6 +306,10 @@ class MLPOffloadingPolicy:
         Raises:
             ValueError: If no network context or no EdgeServers available
         """
+        # Prefer scenario WAN latency attached to the task (dataset contract)
+        if getattr(task, "network_latency_ms", None) is not None:
+            return float(task.network_latency_ms)
+
         if task.user is None or task.user.base_station is None:
             raise ValueError("Task must have a user with base_station")
 

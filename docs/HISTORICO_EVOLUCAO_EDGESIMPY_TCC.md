@@ -3662,9 +3662,11 @@ Task → Feature Extraction → MLP_final_6 → Edge/Cloud
 - `models/mlp_final_6.npz`: Pesos do modelo serializados
 - `models/mlp_final_6.json`: Parâmetros de normalização serializados
 
-### Descoberta crítica: MLP Edge Bias
+### Descoberta crítica: MLP Edge Bias — ⚠️ CONCLUSÃO RETRAIDA (ver Fase 16)
 
-**Problema identificado:** O MLP_final_6 aprendeu a prever **sempre Edge**, mesmo quando o workload contém 50% de labels Cloud.
+> **Correção posterior (Fase 16, 09/09/2026):** A conclusão abaixo de que "o MLP aprendeu a prever sempre Edge" foi **invalidada** pela auditoria de paridade. A causa real do resultado 100% Edge foi um **bug de dupla normalização** em `MLPOffloadingPolicy.predict()` — a política normalizava as features e depois chamava `model.predict()`, que normaliza internamente. Após a correção, o mesmo workload produz 18 Edge / 2 Cloud (não 20/0). A "limitação do modelo" descrita nesta seção **não é uma propriedade do modelo treinado** — era um bug no pipeline de inferência. Ver `results/PARITY_AUDIT_REPORT.md` e a Fase 16 abaixo.
+
+**Problema identificado (interpretação original, hoje retraida):** O MLP_final_6 aprendeu a prever **sempre Edge**, mesmo quando o workload contém 50% de labels Cloud.
 
 **Evidências:**
 
@@ -3741,7 +3743,7 @@ Task → Feature Extraction → MLP_final_6 → Edge/Cloud
 
 ### Limitações identificadas
 
-1. **Modelo não faz decisões Edge/Cloud**: O MLP aprendeu a sempre prever Edge, impossibilitando teste do caminho Cloud
+1. ~~**Modelo não faz decisões Edge/Cloud**: O MLP aprendeu a sempre prever Edge~~ **RETRAIDA** — causada pelo bug de dupla normalização, não pelo modelo (ver Fase 16)
 
 2. **CLOUD_UNAVAILABLE não testado**: Como nenhuma task foi prevista como Cloud, o comportamento de Cloud indisponível não foi validado
 
@@ -3768,24 +3770,249 @@ Task → Feature Extraction → MLP_final_6 → Edge/Cloud
 
 1. **Integração técnica bem-sucedida**: O pipeline MLP → EdgeSimPy funciona corretamente, com serialização de modelo, execução de Tasks e coleta de métricas sistêmicas
 
-2. **Limitação do modelo revelada**: A avaliação representativa expõe que o MLP não aprendeu a distinguir casos Edge/Cloud, apesar de alta accuracy no dataset desbalanceado
+2. ~~**Limitação do modelo revelada**~~ **RETRAIDA**: a avaliação original media o bug de inferência, não o modelo. A avaliação corrigida está na Fase 16
 
 3. **Separação de responsabilidades mantida**: A arquitetura preserva a separação entre decisão (MLP), seleção de servidor (Nearest) e execução (EdgeSimPy)
 
 4. **Metodologia rigorosa**: O uso de workload representativo do conjunto de validação evita contaminação do conjunto de teste
 
-5. **Base para futuras melhorias**: A descoberta do bias Edge direciona investigações sobre discriminabilidade das features e adequação do modelo
+5. ~~**Base para futuras melhorias**: a descoberta do bias Edge~~ **RETRAIDA**: não havia bias real do modelo — havia dupla normalização
 
 ### Próximas etapas recomendadas
 
-1. **Investigar causa do bias Edge**: Analisar se as features são realmente discriminativas ou se há problema no treinamento
+1. ~~Investigar causa do bias Edge~~ **RESOLVIDO**: a causa era dupla normalização em `MLPOffloadingPolicy.predict()`, não propriedade do modelo (Fase 15/16)
 
 2. **Implementar Cloud no EdgeSimPy**: Permitir execução de tasks previstas como Cloud para testar o pipeline completo
 
-3. **Análise de features**: Avaliar se features adicionais ou diferentes poderiam melhorar a distinção Edge/Cloud
+3. **Resolver a semântica das features de rede**: `BandwidthMbps`/`NetworkLatencyMs` divergem entre dataset C# (WAN por-task) e runtime EdgeSimPy (topologia Edge) — ver Fase 16
 
 4. **Considerar modelos alternativos**: Explorar outras arquiteturas ou abordagens que possam capturar melhor a decisão Edge/Cloud
 
-5. **Validação com conjunto de teste**: Após resolver o bias Edge, avaliar o modelo no conjunto de teste intocado
+5. **Validação com conjunto de teste**: Após a auditoria de paridade, avaliar o modelo no conjunto de teste intocado
 
 **NÃO avançar automaticamente para**: implementação de Cloud, WiSARD, tuning de hiperparâmetros, ou novas features.
+
+## 34. Fase 15: Auditoria de Paridade Treinamento → Inferência (09/09/2026)
+
+**Objetivo:** Investigar a inconsistência crítica entre os 83.20% accuracy do `MLP_final_6` no test set offline e os 50% accuracy (100% Edge) no workload representativo EdgeSimPy.
+
+### Contexto da Inconsistência
+
+**Discrepância observada:**
+- **Offline (test set)**: 83.20% accuracy, predições balanceadas Edge/Cloud
+- **EdgeSimPy (workload representativo)**: 50% accuracy, 100% predições Edge
+
+**Hipóteses investigadas:**
+- Modelo treinado ≠ modelo salvo ≠ modelo carregado
+- Preprocessing treinado ≠ preprocessing salvo
+- Features dataset ≠ features runtime
+- Problema de serialização/carregamento
+- Problema de threshold ou mapeamento de classes
+
+### Metodologia da Auditoria
+
+**Auditoria de paridade completa** seguindo protocolo rigoroso:
+
+1. **Verificação do modelo**: Comparação de pesos, bias, arquitetura, configuração
+2. **Verificação do preprocessing**: Comparação de mins, maxs, ordem, clipping
+3. **Comparação de features**: Dataset vs runtime EdgeSimPy
+4. **Teste de invariância**: Dataset → MLP vs Task → Feature Extractor → MLP
+5. **Análise de saída**: Valores contínuos antes do threshold
+
+### Descoberta Crítica: Bug de Dupla Normalização
+
+**PROBLEMA IDENTIFICADO**: O `MLPOffloadingPolicy.predict()` aplica **dupla normalização** aos dados de entrada.
+
+**Localização do bug** (`src/policies/ml_offloading.py`, linhas 140-145):
+
+```python
+# BUG: Dupla normalização
+features_array = np.array([features])
+features_normalized = self.model.normalizer.transform(features_array)
+prediction = self.model.predict(features_normalized)[0]
+```
+
+**O fluxo incorreto:**
+1. Extrai features **raw** da Task
+2. Normaliza com `self.model.normalizer.transform()`
+3. Passa dados **já normalizados** para `model.predict()`
+4. `model.predict()` normaliza **novamente** internamente
+
+### Evidência do Bug
+
+**Teste com amostras Cloud reais do validation set:**
+
+| Sample | Raw Features | True Label | Raw Pred | Norm Pred (BUG) |
+|--------|--------------|------------|----------|-----------------|
+| 0 | [2.6e9, 10.5, 0.05, 4759.6, 231.0, 94.0] | Cloud | Cloud | **Edge** |
+| 1 | [5.3e9, 0.2, 0.84, 1832.5, 73.2, 64.5] | Cloud | Cloud | **Edge** |
+| 2 | [2.3e9, 0.3, 0.16, 3342.4, 741.4, 58.4] | Cloud | Cloud | **Edge** |
+| 3 | [7.2e9, 69.2, 0.52, 705.5, 891.5, 3.0] | Cloud | Cloud | **Edge** |
+
+**Todos os samples Cloud foram classificados como Edge quando passaram pela dupla normalização.**
+
+### Mecanismo do Bug
+
+A normalização Min-Max aplicada duas vezes:
+1. **Primeira normalização**: `raw → [0, 1]`
+2. **Segunda normalização**: `[0, 1] → tratado como raw → ~0`
+
+Isso desloca todas as features para o limite inferior, fazendo com que o MLP produza saídas consistentemente `< 0.5` (Edge).
+
+### Verificação Completa do Pipeline
+
+**Modelo salvo vs modelo em memória:**
+- ✅ Pesos, bias, arquitetura: idênticos
+- ✅ Configuração (hidden=18, lr=0.04, epochs=35, seed=11): idêntica
+- ✅ Normalizer params (mins/maxs): idênticos
+- ✅ Estado `is_fitted`: preservado corretamente
+
+**Preprocessing salvo vs treinamento:**
+- ✅ Min-max normalization: mesmos parâmetros
+- ✅ Clipping `[0, 1]`: aplicado corretamente
+- ✅ Feature order: preservada
+
+**Features dataset vs runtime:**
+- ✅ Ordem: `CpuCycles, TaskSizeMB, LatencySensitivity, RequiredMemoryMB, BandwidthMbps, NetworkLatencyMs`
+- ✅ Unidades: consistentes
+- ✅ `BandwidthMbps`: gargalo mínimo entre EdgeServers
+- ✅ `NetworkLatencyMs`: média dos path delays
+
+### Teste de Invariância
+
+**Dataset → MLP vs Task → Feature Extractor → MLP:**
+
+**Amostra Cloud (index 1):**
+- Raw: `[2639831889.69541, 10.5079, 0.04851, 4759.5717, 231.0421, 93.9785]`
+- Dataset → MLP: **Cloud** (correto)
+- Task → Policy → MLP: **Edge** (incorreto - bug)
+
+**Amostra Cloud (index 7):**
+- Raw: `[5338336968.11382, 0.20712, 0.84255, 1832.51569, 73.22797, 64.47664]`
+- Dataset → MLP: **Cloud** (correto)
+- Task → Policy → MLP: **Edge** (incorreto - bug)
+
+### Análise de Saída do MLP
+
+**Valores contínuos antes do threshold:**
+
+| Sample | Raw Output | Threshold | Correct Pred | Bug Pred |
+|--------|------------|-----------|--------------|----------|
+| 0 | 0.8690 | ≥0.5 | Cloud | Edge |
+| 1 | 0.6318 | ≥0.5 | Cloud | Edge |
+| 2 | 0.8598 | ≥0.5 | Cloud | Edge |
+
+**O modelo produz saídas > 0.5 para Cloud quando alimentado corretamente**, mas a dupla normalização desloca todas as saídas para < 0.5 (Edge).
+
+### Regressões Executadas
+
+Todos os testes de regressão **passam** mesmo com o bug:
+
+- ✅ `test_ml_dataset.py`: Contrato de dados validado
+- ✅ `test_ml_models.py`: Modelos ML funcionam corretamente
+- ✅ `test_task_scheduler_with_network.py`: 10/10 validações
+- ✅ `experimento_offloading_destinos.py`: Sucesso
+- ✅ `experimento_multiplas_tasks.py`: Sucesso
+- ✅ `experimento_robustez_politicas.py`: Sucesso
+- ✅ `experimento_heuristica_offloading.py`: Sucesso
+- ✅ `experimento_sensibilidade_heuristica.py`: Sucesso
+- ✅ `experimento_mlp_edgesimpy.py`: Integração funciona (mas com bug)
+
+**Nota**: Os testes passam porque testam componentes isolados, não a política MLPOffloadingPolicy com o bug.
+
+### Conclusão da Auditoria
+
+**Caso D identificado**: Mesmo X + preprocessing diferente → predição diferente
+
+O problema está especificamente na implementação da política `MLPOffloadingPolicy.predict()` que aplica dupla normalização aos dados de entrada.
+
+### Impacto da Descoberta
+
+- **83.20% accuracy offline** → **50% accuracy EdgeSimPy**
+- **Predições Edge/Cloud balanceadas** → **100% Edge**
+- **Modelo funcional** → **Modelo inútil em runtime**
+
+### Não é um problema de:
+
+- ❌ Modelo treinado vs modelo salvo
+- ❌ Preprocessing treinado vs preprocessing salvo
+- ❌ Features do dataset vs features runtime
+- ❌ Threshold ou mapeamento de classes
+- ❌ Serialização ou carregamento
+
+### Correção Identificada
+
+**Solução**: Remover a dupla normalização em `MLPOffloadingPolicy.predict()`:
+
+```python
+# ANTES (BUG):
+features_normalized = self.model.normalizer.transform(features_array)
+prediction = self.model.predict(features_normalized)[0]
+
+# DEPOIS (CORRETO):
+prediction = self.model.predict(features_array)[0]
+```
+
+### Arquivos Afetados
+
+- `src/policies/ml_offloading.py`: Linhas 140-145 contêm o bug
+- `src/experimento_mlp_workload_representativo.py`: Usa a política bugada
+- `src/experimento_mlp_edgesimpy.py`: Usa a política bugada
+- `src/experimento_comparativo_sistemico.py`: Usa a política bugada
+
+### Status da Correção
+
+**AUDITORIA COMPLETA** - Bug identificado, documentado e verificado. 
+
+**NÃO CORRIGIR AINDA** - Aguardando aprovação para implementar a correção, conforme instruções do usuário.
+
+### Próxima Etapa Recomendada
+
+1. **Corrigir o bug de dupla normalização** em `MLPOffloadingPolicy.predict()`
+2. **Validar a correção** executando o workload representativo
+3. **Confirmar que amostras Cloud são preditas como Cloud**
+4. **Verificar que accuracy aproxima-se de 83.20%**
+
+**NÃO avançar automaticamente para**: implementação de Cloud, WiSARD, tuning, ou novas features.
+
+
+## 35. Fase 16: Correcao da dupla normalizacao e auditoria de paridade completa (09/09/2026)
+
+**Objetivo:** Corrigir o bug de dupla normalizacao identificado na Fase 15 e completar a auditoria de paridade treinamento -> inferencia, garantindo que MLPModel.predict(X_raw) == MLPOffloadingPolicy.predict(Task) para as mesmas entradas.
+
+### Correcoes aplicadas
+
+| Arquivo | Alteracao |
+|---------|-----------|
+| src/policies/ml_offloading.py | Removida dupla normalizacao: predict(features_array) com dados raw |
+| src/experimento_mlp_workload_representativo.py | rozen_sample_ids; deadline do dataset por amostra; mesma Task decisao->execucao com assertion; processing_rate=12 GHz; loop manual de steps |
+| src/experimento_mlp_edgesimpy.py | processing_rate=12 GHz (tasks ~10^9 ciclos passam a completar) |
+| src/test_mlp_policy_parity.py | Novo teste de paridade/invariancia |
+
+### Resultado do workload 50/50 corrigido (apos fix completo: dupla normalizacao + semantica WAN)
+
+- Sample IDs congelados: [17, 433, 955, 1943, 3704, 5750, 5969, 6141, 6779, 8181, 8378, 8743, 11071, 11312, 11695, 11814, 12387, 12444, 13435, 13549]
+- Labels: 10 Edge, 10 Cloud
+- **Predicoes: 11 Edge, 9 Cloud** — o MLP decide sobre as features reais do dataset
+- Accuracy: **0.850** (consistente com os 83.2% do test set; n=20, ruido amostral)
+- Confusion matrix: [[9,1],[2,8]]
+- Edge precision/recall/F1: 0.818/0.900/0.857 | Cloud: 0.889/0.800/0.842
+- Executadas: 11 tasks Edge; **9 CLOUD_UNAVAILABLE** (sem fallback)
+- Paridade exata no teste de invariancia: **20/20** (dataset -> modelo == Task -> politica, incluindo outputs continuos)
+
+### Descoberta adicional: semantica de features de rede — RESOLVIDA
+
+BandwidthMbps e NetworkLatencyMs tinham semanticas diferentes:
+
+- **C#**: condicao WAN user->Cloud amostrada por task (Bandwidth ~LogUniform(2,1000), Latency ~Uniform(2,180)); usadas **somente** no custo Cloud
+- **EdgeSimPy (antes)**: derivados da topologia Edge (bottleneck 12.5 fixo; avg delay 11.67 fixo) — direcao oposta do caminho e fora da distribuicao de treino
+
+**Solucao**: nao existe no Cloud na topologia, entao a Task passou a carregar as condicoes WAN do cenario (`task.bandwidth_mbps`, `task.network_latency_ms` da linha do dataset). O calculo topologico virou fallback documentado. Resultado: paridade exata e predicoes realistas (Cloud prediction rate ~45% no workload balanceado).
+
+### Status
+
+**CORRECAO APLICADA E VALIDADA.** Todas as regressoes passam. A conclusao anterior de  bias Edge do modelo esta retraida — era bug de inferencia.
+
+**Nao implementado** (propositalmente): retreino, tuning, Cloud, fallback, conversao de features de rede, alteracao no EdgeSimPy.
+
+**Relatorio completo:** edgesimpy-simulation/results/PARITY_AUDIT_REPORT.md

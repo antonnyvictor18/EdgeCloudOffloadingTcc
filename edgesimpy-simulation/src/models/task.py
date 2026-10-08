@@ -28,6 +28,13 @@ class Task:
     latency_sensitivity: float = 0.0
     required_memory_mb: float = 0.0
 
+    # Simulated WAN conditions of the scenario (user -> Cloud path), sampled
+    # per task in the C# dataset contract. In EdgeSimPy these are scenario
+    # context, NOT edge-topology measurements - there is no Cloud node in the
+    # topology to derive them from.
+    bandwidth_mbps: Optional[float] = None
+    network_latency_ms: Optional[float] = None
+
     # Temporal state
     creation_time_s: float = 0.0
     decision_time_s: Optional[float] = None

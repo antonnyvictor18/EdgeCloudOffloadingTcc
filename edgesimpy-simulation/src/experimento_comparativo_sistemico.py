@@ -427,14 +427,18 @@ class PolicyComparator:
                     print(f"    Warning: Server {selected_server.id} not found in execution simulator")
                     continue
 
+                # PRESERVE ORIGINAL TASK PROPERTIES - Critical fix
+                # The decision was made on original task, so execute the same task
                 new_task = Task(
                     task_id=task.task_id,
                     user=User.find_by_id(self.config.user_id),
-                    cpu_cycles=task.cpu_cycles,
-                    data_size_mb=task.data_size_mb,
+                    cpu_cycles=task.cpu_cycles,  # Preserve original (decision was made on this)
+                    data_size_mb=task.data_size_mb,  # Preserve original (decision was made on this)
                     deadline_ms=task.deadline_ms,
                     latency_sensitivity=task.latency_sensitivity,
                     required_memory_mb=task.required_memory_mb,
+                    bandwidth_mbps=task.bandwidth_mbps,  # WAN scenario condition
+                    network_latency_ms=task.network_latency_ms,  # WAN scenario condition
                     creation_time_s=0.0,
                 )
                 new_task.target_server = new_selected_server
@@ -471,6 +475,11 @@ class PolicyComparator:
         random_gen = random.Random(self.config.experiment_id + str(count))
 
         for i in range(count):
+            # WAN conditions (user->Cloud) sampled like the C# generator so the
+            # MLP sees in-distribution network features (documented contract)
+            import math
+            bandwidth_mbps = math.exp(random_gen.uniform(math.log(2), math.log(1000)))
+            network_latency_ms = random_gen.uniform(2, 180)
             task = Task(
                 task_id=f"task_{i:02d}",
                 user=user,
@@ -479,6 +488,8 @@ class PolicyComparator:
                 deadline_ms=self.config.task_deadline_ms,
                 latency_sensitivity=random_gen.uniform(0, 1),
                 required_memory_mb=random_gen.uniform(64, 6144),
+                bandwidth_mbps=bandwidth_mbps,
+                network_latency_ms=network_latency_ms,
                 creation_time_s=0.0,
             )
             tasks.append(task)
@@ -524,6 +535,8 @@ class PolicyComparator:
                 deadline_ms=task.deadline_ms,
                 latency_sensitivity=task.latency_sensitivity,
                 required_memory_mb=task.required_memory_mb,
+                bandwidth_mbps=task.bandwidth_mbps,  # WAN scenario condition
+                network_latency_ms=task.network_latency_ms,  # WAN scenario condition
                 creation_time_s=0.0,
             )
             new_task.target_server = EdgeServer.find_by_id(selected_servers[task.task_id])

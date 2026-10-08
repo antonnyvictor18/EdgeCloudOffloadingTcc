@@ -89,15 +89,25 @@ cd edgesimpy-simulation
 - **Fase 4:** Auditoria de provisionamento
 - **Fase 5:** Modelo temporal de Tasks (Task, TaskStatus, TaskExecutor, TaskQueue, TaskScheduler)
 
-### 🔵 Fase 6 - Atual
-- Integração do TaskScheduler ao ciclo temporal do EdgeSimPy
-- Ainda sem NetworkFlow para dados de Task, Cloud, ML ou offloading completo
+### ✅ Fases 6-14 concluídas (até 08/09/2026)
+- **Fase 6:** TaskScheduler integrado ao ciclo temporal do EdgeSimPy
+- **NetworkFlow:** `TaskNetworkFlow` transmite dados da Task antes da execução
+- **Contrato de dados:** dataset C# de 6 features (`CpuCycles, TaskSizeMB, LatencySensitivity, RequiredMemoryMB, BandwidthMbps, NetworkLatencyMs`), splits reproduzíveis (70/15/15)
+- **Modelos ML em Python:** WiSARD, MLP, baseline Majority; `MLP_final_6` serializado (`models/mlp_final_6.npz/.json`)
+- **Política MLP no EdgeSimPy:** `MLPOffloadingPolicy` decide Edge/Cloud; seleção de servidor delegada a `NearestServerPolicy`; predições Cloud → `CLOUD_UNAVAILABLE` explícito (sem fallback)
+- **Avaliação comparativa sistêmica:** Random, Nearest, LeastLoaded, Hybrid e MLP em workloads de 1-8 tasks
+
+### ✅ Fase 15-16 - Auditoria de paridade e correção (09/09/2026)
+- **Bug corrigido:** `MLPOffloadingPolicy` aplicava dupla normalização (normalizava antes de `predict()`, que já normaliza internamente) — causava 100% predições Edge. O modelo **não** tem bias Edge; a conclusão anterior foi retraida
+- **Correções de pipeline:** workload congelado usa os sample IDs exatos; a mesma Task (5 propriedades verificadas) vai da decisão à execução; `processing_rate=12 GHz` igual à capacidade Edge do modelo analítico C#; deadline real do dataset por amostra
+- **Teste de invariância:** `src/test_mlp_policy_parity.py` valida modelo salvo vs memória, preprocessing, outputs contínuos e identidade Task decisão↔execução
+- **Features WAN corrigidas:** `BandwidthMbps`/`NetworkLatencyMs` são condições WAN user→Cloud por-task no contrato C# (só afetam o custo Cloud) — a `Task` agora carrega esses valores do cenário; o cálculo topológico virou fallback documentado. Paridade exata 20/20 no teste de invariância
+- **Workload 50/50 corrigido:** 10 Edge / 10 Cloud labels → 11 Edge / 9 Cloud preditos; accuracy 0.850 (consistente com 83.2% offline); 9 `CLOUD_UNAVAILABLE`; 11 tasks executadas
+- Relatório completo: `edgesimpy-simulation/results/PARITY_AUDIT_REPORT.md`
 
 ### ⏳ Fases futuras
-- NetworkFlow para transmissão de dados de Task
-- Representação de Cloud
-- Integração C# ↔ Python (contrato CSV/JSON)
-- Políticas ML (WiSARD, MLP) conectadas ao EdgeSimPy
+- Representação de Cloud (executar predições Cloud, hoje `CLOUD_UNAVAILABLE`)
+- Avaliação no conjunto de teste intocado
 - Mobilidade e experimentos de estresse
 
 ## Documentação técnica
@@ -134,13 +144,10 @@ cd edgesimpy-simulation
 
 ## Próximos passos recomendados
 
-1. Concluir Fase 6: integrar TaskScheduler ao ciclo temporal do EdgeSimPy
-2. Implementar NetworkFlow para transmissão de dados de Task
-3. Adicionar representação de Cloud
-4. Criar contrato CSV/JSON entre C# e Python
-5. Conectar políticas ML (WiSARD, MLP) ao EdgeSimPy
-6. Realizar experimentos comparativos completos
-7. Escrever metodologia e resultados finais do TCC
+1. Adicionar representação de Cloud para executar predições Cloud (hoje `CLOUD_UNAVAILABLE`)
+2. Avaliar o modelo no conjunto de teste intocado após a auditoria de paridade
+3. Experimentos comparativos completos com métricas sistêmicas
+4. Escrever metodologia e resultados finais do TCC
 
 ## Ambiente de desenvolvimento
 
