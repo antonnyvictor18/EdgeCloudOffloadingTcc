@@ -102,12 +102,41 @@ cd edgesimpy-simulation
 - **Correções de pipeline:** workload congelado usa os sample IDs exatos; a mesma Task (5 propriedades verificadas) vai da decisão à execução; `processing_rate=12 GHz` igual à capacidade Edge do modelo analítico C#; deadline real do dataset por amostra
 - **Teste de invariância:** `src/test_mlp_policy_parity.py` valida modelo salvo vs memória, preprocessing, outputs contínuos e identidade Task decisão↔execução
 - **Features WAN corrigidas:** `BandwidthMbps`/`NetworkLatencyMs` são condições WAN user→Cloud por-task no contrato C# (só afetam o custo Cloud) — a `Task` agora carrega esses valores do cenário; o cálculo topológico virou fallback documentado. Paridade exata 20/20 no teste de invariância
-- **Workload 50/50 corrigido:** 10 Edge / 10 Cloud labels → 11 Edge / 9 Cloud preditos; accuracy 0.850 (consistente com 83.2% offline); 9 `CLOUD_UNAVAILABLE`; 11 tasks executadas
+- **Workload 50/50 corrigido:** 10 Edge / 10 Cloud labels → 11 Edge / 9 Cloud preditos; accuracy 0.850 (consistente com 81.7% do artefato no test set canônico); 9 `CLOUD_UNAVAILABLE`; 11 tasks executadas
 - Relatório completo: `edgesimpy-simulation/results/PARITY_AUDIT_REPORT.md`
+
+### ✅ Fase 17 - WiSARD integrado ao pipeline (12/10/2026)
+- **`WiSARDOffloadingPolicy`:** mesmo contrato da política MLP — extrai as 6 features da Task (extração compartilhada, fonte única) e decide Edge/Cloud; predições Cloud → `CLOUD_UNAVAILABLE`
+- **Contrato:** treinado em `dataset.train` na sessão (sem artefato serializado), sobre as **6 features** — não é port do WiSARD C# de 12 features, que usa estado de servidores sem equivalente no EdgeSimPy
+- **Paridade:** `src/test_wisard_policy_parity.py` — 20/20 exata em predições **e** scores dos discriminadores; determinismo, encoder e contrato de decisão verificados
+- **Workload 50/50 congelado:** WiSARD prediz 20 Edge / 0 Cloud (accuracy 0.500) vs MLP 11/9 (accuracy 0.850) — mesmas amostras, mesmo pipeline
+- **Achado:** WiSARD sub-capacitado no contrato de 6 features (24 bits → apenas 3 RAMs por discriminador; saturação + desempate pró-Edge em 78-87% das amostras; validation acc 62.8% ≈ baseline maioria). Limitação do modelo, não do pipeline — tuning fora do escopo desta etapa
+- **Uso:** `python src/experimento_mlp_workload_representativo.py [mlp|wisard]`
+
+### ✅ Fase 18 - Estudo controlado de hiperparâmetros do WiSARD (12/10/2026)
+- **Protocolo:** seleção **só no validation** por **macro-F1** (accuracy premia o colapso para a maioria com prior 62/38); 5 seeds por configuração, média ± sd; test set intocado. Grid 72 configs: encoding {binary, thermometer} × bits × address × bleaching
+- **Causa do colapso:** empates (78–87% das amostras) resolvidos pró-Edge. **Bleaching** é o fator dominante (+0,23 macro-F1); só adicioná-lo à config C# já dá 0,720. Termômetro e `addr=16` ajudam modestamente; resolução em bits é irrelevante
+- **`WISARD_FINAL_6`** (thermometer / 64 bits / addr 16 / bleaching, 24 RAMs): validation macro-F1 **0,738 ± 0,009**, accuracy 0,768 (vs 0,395 / 0,627 da config C#-equivalente). Platô estatístico com 8–32 bits documentado. Ainda abaixo do MLP (0,799)
+- **Workload 50/50 congelado:** WiSARD 20/0 → **12 Edge / 8 Cloud, accuracy 0,800** (CM [[9,1],[3,7]]) vs MLP 0,850
+- **Engenharia:** RAMs como contagens vetorizadas (bit-a-bit equivalente ao modelo anterior nos defaults); `scores()` público; paridade 20/20 mantida
+- Relatórios: `edgesimpy-simulation/results/wisard_tuning.{md,json}`, `wisard_representative_workload.{md,json}`; script `src/experimento_tuning_wisard.py`
+
+### ✅ Fase 19 - Avaliação final no test set + correção do split (13/10/2026)
+- **Bug crítico corrigido:** o split train/val/test dependia da ordem de iteração de um `frozenset` (`PYTHONHASHSEED`) — existiam **duas instâncias do split**, sorteadas por processo. O "83,2% no test set" histórico era de um modelo treinado no *outro* split; o artefato `mlp_final_6` vale **81,7%** no test do seu split. Correção: `sorted(VALID_LABELS)`; teste de regressão com fingerprint do split validado sob vários `PYTHONHASHSEED`
+- **Avaliação única no test set (n=2250)**, IC 95% bootstrap, McNemar pareado, paridade nas 2250 amostras:
+
+  | Modelo | accuracy [IC95] | macro-F1 [IC95] | recall Cloud |
+  |---|---|---|---:|
+  | MLP_final_6 | **0,817** [0,802; 0,833] | **0,803** [0,787; 0,820] | 0,730 |
+  | WISARD_FINAL_6 | 0,747 [0,729; 0,764] | 0,718 [0,698; 0,737] | 0,568 |
+  | Majority | 0,624 | 0,384 | 0,000 |
+
+- MLP > WiSARD com p = 4e-15 (284 vs 126 discordantes); sem otimismo de seleção no MLP; WiSARD seed 7 mostra −0,027 de otimismo de *seed* (configuração generaliza: 0,729 médio no test)
+- **Paridade fechada no test inteiro:** 0 divergências `policy(Task)` vs `model(X_raw)` para ambos
+- Script `src/experimento_avaliacao_test_set.py`; relatórios `results/final_test_evaluation.{md,json}`. **O test set agora está usado** — nova seleção de modelo exigiria novo split
 
 ### ⏳ Fases futuras
 - Representação de Cloud (executar predições Cloud, hoje `CLOUD_UNAVAILABLE`)
-- Avaliação no conjunto de teste intocado
 - Mobilidade e experimentos de estresse
 
 ## Documentação técnica

@@ -181,7 +181,9 @@ def _stratified_split(
     seed: int,
 ) -> tuple[FullSplitDataset, FullSplitDataset, FullSplitDataset]:
     randomizer = random.Random(seed)
-    buckets: dict[str, list[int]] = {label: [] for label in VALID_LABELS}
+    # Sorted label order: frozenset iteration depends on PYTHONHASHSEED and
+    # made the split non-reproducible across processes (see ml/dataset.py).
+    buckets: dict[str, list[int]] = {label: [] for label in sorted(VALID_LABELS)}
     for index, label in enumerate(data.y):
         buckets[label].append(index)
 

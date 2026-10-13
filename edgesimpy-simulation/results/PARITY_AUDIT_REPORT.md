@@ -137,7 +137,7 @@ Não existe nó Cloud na topologia EdgeSimPy para derivar WAN — logo a forma d
 | **Actual Edge** | 9 | 1 |
 | **Actual Cloud** | 2 | 8 |
 
-Accuracy 0.85 no workload é consistente com os 83.2% offline do test set (n=20, ruído amostral).
+Accuracy 0.85 no workload é consistente com os 81.7% do artefato congelado no test set canônico (ver `final_test_evaluation.md`; o valor histórico de 83.2% vinha de um modelo treinado em outra instância do split — ver Fase 19 do histórico). n=20, ruído amostral.
 
 ### Execução
 

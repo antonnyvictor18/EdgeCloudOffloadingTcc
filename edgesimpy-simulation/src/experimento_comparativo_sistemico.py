@@ -893,7 +893,7 @@ def generate_comparative_report(results: ComparativeResults, output_path: Path) 
         "",
         "#### Three-Level Evaluation",
         "",
-        "1. **Predictive**: MLP accuracy/F1 on test set (83.20%) - measures classification quality",
+        "1. **Predictive**: MLP accuracy/F1 on test set (81.73%, see results/final_test_evaluation.md) - measures classification quality",
         "2. **Decision**: Edge/Cloud predictions and server selection - measures routing behavior",
         "3. **Systemic**: Transmission, queue, execution, completion, deadline - measures performance",
         "",

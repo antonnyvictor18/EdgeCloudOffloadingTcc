@@ -217,6 +217,34 @@ def test_test_set_untouched() -> None:
     print("[PASS] Test set untouched test passed")
 
 
+def test_split_reproducible_across_processes() -> None:
+    """The split must not depend on PYTHONHASHSEED (frozenset iteration order).
+
+    Fingerprint: first test sample_ids of the canonical split (the one the
+    frozen MLP_final_6 artifact was trained under). The artifact's normalizer
+    mins must equal the canonical train-split mins, tying the artifact to it.
+    """
+    repository_root = Path(__file__).resolve().parents[2]
+    source = repository_root / "Dataset" / "dataset.csv"
+    dataset = load_offloading_dataset(source, source_seed=42, split_seed=43)
+
+    expected_test_head = (12288, 9270, 12641, 8115, 13213)
+    expected_train_head = (8566, 9238, 13113, 2524, 11684)
+    assert dataset.test.sample_ids[:5] == expected_test_head, dataset.test.sample_ids[:5]
+    assert dataset.train.sample_ids[:5] == expected_train_head, dataset.train.sample_ids[:5]
+
+    artifact = repository_root / "edgesimpy-simulation" / "models" / "mlp_final_6"
+    if artifact.with_suffix(".npz").exists():
+        model = MLPModel(MLPConfig(hidden_neurons=18, learning_rate=0.04, epochs=35, seed=11))
+        model.load(artifact)
+        train_mins = np.array(dataset.train.X).min(axis=0)
+        assert np.allclose(model.normalizer.params.mins, train_mins), (
+            "MLP_final_6 artifact normalizer does not match the canonical train split"
+        )
+
+    print("[PASS] Split reproducibility test passed")
+
+
 def main() -> int:
     """Run all ML pipeline tests."""
     print("Running ML pipeline tests...")
@@ -231,6 +259,7 @@ def main() -> int:
         test_metrics()
         test_reproducibility()
         test_test_set_untouched()
+        test_split_reproducible_across_processes()
 
         print("="*60)
         print("All ML pipeline tests: PASS")

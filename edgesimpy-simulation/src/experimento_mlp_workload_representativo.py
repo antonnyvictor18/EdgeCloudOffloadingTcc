@@ -1,19 +1,22 @@
-"""Representative workload evaluation for MLP_final_6 Edge/Cloud decisions.
+"""Representative workload evaluation for Edge/Cloud ML offloading decisions.
 
-This experiment creates a fixed, representative workload containing both Edge and Cloud
-samples from the validation set, then evaluates the frozen MLP model's decision
-capability without altering the model or workload selection based on results.
+This experiment evaluates an ML policy (MLP_final_6 or WiSARD) on a fixed,
+representative workload containing both Edge and Cloud samples, testing the
+model's decision capability without altering the model or workload selection
+based on results.
 
 Methodology:
 1. Define workload selection rule using validation set (50% Edge, 50% Cloud)
 2. Freeze the selected workload (record sample IDs)
-3. Evaluate MLP predictions on this fixed workload
+3. Evaluate model predictions on this fixed workload
 4. Execute Edge-predicted tasks in EdgeSimPy
 5. Mark Cloud-predicted tasks as CLOUD_UNAVAILABLE
 6. Compare with NearestServerPolicy as Edge-only control
 
 IMPORTANT: This evaluation uses validation set for workload selection to avoid
 test set contamination. The test set remains untouched for final evaluation.
+
+Usage: python experimento_mlp_workload_representativo.py [mlp|wisard]
 """
 
 from __future__ import annotations
@@ -37,7 +40,13 @@ from models import Task, TaskStatus
 from execution.task_scheduler import TaskScheduler
 from ml.dataset import FEATURE_NAMES, load_offloading_dataset
 from policies import NearestServerPolicy
-from policies.ml_offloading import CloudUnavailableStatus, MLPOffloadingPolicy, create_mlp_offloading_policy
+from policies.ml_offloading import (
+    CloudUnavailableStatus,
+    MLPOffloadingPolicy,
+    WiSARDOffloadingPolicy,
+    create_mlp_offloading_policy,
+    create_wisard_offloading_policy,
+)
 
 
 @dataclass(frozen=True)
@@ -72,7 +81,9 @@ class RepresentativeWorkloadConfig:
     workload_size: int = 20  # Fixed workload size
     edge_ratio: float = 0.5  # Target 50% Edge, 50% Cloud
 
-    # Model parameters
+    # Policy under evaluation: "mlp" (frozen MLP_final_6 artifact) or
+    # "wisard" (trained in-session on dataset.train, seeded)
+    policy: str = "mlp"
     model_path: Optional[Path] = None
 
 
@@ -83,7 +94,7 @@ class TaskEvaluationResult:
     task_id: str
     sample_id: int  # Original dataset sample ID
     analytical_label: str  # Ground truth from dataset
-    mlp_prediction: str  # MLP prediction
+    prediction: str  # Model prediction ("Edge"/"Cloud")
     execution_status: str  # "EXECUTED", "CLOUD_UNAVAILABLE", "FAILED"
     selected_edge_server_id: Optional[int] = None
     features_used: Optional[Dict[str, float]] = None
@@ -143,7 +154,7 @@ class RepresentativeWorkloadEvaluator:
     def run_evaluation(self) -> RepresentativeWorkloadResults:
         """Run the complete representative workload evaluation."""
         print("="*70)
-        print("MLP Representative Workload Evaluation")
+        print(f"{self.config.policy.upper()} Representative Workload Evaluation")
         print("="*70)
         print(f"Workload size: {self.config.workload_size}")
         print(f"Target composition: {self.config.edge_ratio:.0%} Edge, {1-self.config.edge_ratio:.0%} Cloud")
@@ -151,11 +162,11 @@ class RepresentativeWorkloadEvaluator:
         # Step 1: Create representative workload from validation set
         self._create_representative_workload()
 
-        # Step 2: Load MLP model
-        mlp_policy = self._load_mlp_policy()
+        # Step 2: Load/train the model policy
+        policy = self._load_policy()
 
-        # Step 3: Evaluate MLP predictions on workload
-        self._evaluate_mlp_predictions(mlp_policy)
+        # Step 3: Evaluate model predictions on workload
+        self._evaluate_predictions(policy)
 
         # Step 4: Execute Edge-predicted tasks in EdgeSimPy
         self._execute_edge_tasks()
@@ -178,6 +189,7 @@ class RepresentativeWorkloadEvaluator:
         repository_root = Path(__file__).resolve().parents[2]
         dataset_path = repository_root / "Dataset" / "dataset.csv"
         dataset = load_offloading_dataset(dataset_path, source_seed=42, split_seed=43)
+        self.dataset = dataset  # Kept for WiSARD in-session training on dataset.train
 
         print(f"Dataset loaded: {dataset.metadata.sample_count} samples")
 
@@ -213,27 +225,48 @@ class RepresentativeWorkloadEvaluator:
         cloud_count = sum(1 for label in self.results.workload_labels if label == "Cloud")
         print(f"Final workload: {edge_count} Edge, {cloud_count} Cloud")
 
-    def _load_mlp_policy(self) -> MLPOffloadingPolicy:
-        """Load the frozen MLP model."""
+    def _load_policy(self) -> Any:
+        """Load the frozen MLP model or train the WiSARD model in-session."""
         print("\n" + "="*60)
-        print("Step 2: Loading Frozen MLP Model")
+        print(f"Step 2: Preparing {self.config.policy.upper()} Policy")
         print("="*60)
 
-        if self.config.model_path is None:
-            model_path = Path(__file__).resolve().parents[1] / "models" / "mlp_final_6"
-        else:
-            model_path = self.config.model_path
+        if self.config.policy == "mlp":
+            if self.config.model_path is None:
+                model_path = Path(__file__).resolve().parents[1] / "models" / "mlp_final_6"
+            else:
+                model_path = self.config.model_path
 
-        print(f"Loading MLP model from: {model_path}")
-        mlp_policy = create_mlp_offloading_policy(model_path=model_path)
-        mlp_policy.load_model()
-        print("MLP model loaded successfully (frozen)")
-        return mlp_policy
+            print(f"Loading MLP model from: {model_path}")
+            mlp_policy = create_mlp_offloading_policy(model_path=model_path)
+            mlp_policy.load_model()
+            print("MLP model loaded successfully (frozen)")
+            return mlp_policy
 
-    def _evaluate_mlp_predictions(self, mlp_policy: MLPOffloadingPolicy) -> None:
-        """Evaluate MLP predictions on the representative workload."""
+        if self.config.policy == "wisard":
+            # No serialized WiSARD artifact: train in-session on dataset.train.
+            # Deterministic (encoder fitted on train, RAM mapping seeded) and
+            # uses the same 6-feature contract as the MLP - not the 12-feature
+            # C# WisardStrategy contract.
+            wisard_policy = create_wisard_offloading_policy()
+            X_train = np.array(self.dataset.train.X)
+            y_train = np.array(self.dataset.train.y)
+            wisard_policy.fit_model(X_train, y_train)
+            cfg = wisard_policy.config.model
+            print(
+                f"WiSARD (WISARD_FINAL_6) trained on dataset.train: {len(y_train)} samples, "
+                f"encoding={cfg.encoding}, bits_per_feature={cfg.bits_per_feature}, "
+                f"ram_address_size={cfg.ram_address_size}, bleaching={cfg.bleaching}, "
+                f"seed={cfg.seed}, RAMs={wisard_policy.model.ram_count}"
+            )
+            return wisard_policy
+
+        raise ValueError(f"Unknown policy: {self.config.policy!r} (expected 'mlp' or 'wisard')")
+
+    def _evaluate_predictions(self, policy: Any) -> None:
+        """Evaluate model predictions on the representative workload."""
         print("\n" + "="*60)
-        print("Step 3: Evaluating MLP Predictions")
+        print(f"Step 3: Evaluating {self.config.policy.upper()} Predictions")
         print("="*60)
 
         # Create simulator for the entire experiment (single context)
@@ -280,10 +313,10 @@ class RepresentativeWorkloadEvaluator:
             }
             self.workload_tasks.append(task_info)
 
-            # Make MLP prediction
+            # Make model prediction
             try:
-                decision = mlp_policy.predict(task, self.simulator.topology)
-                task_info["mlp_prediction"] = decision.predicted_destination
+                decision = policy.predict(task, self.simulator.topology)
+                task_info["prediction"] = decision.predicted_destination
                 task_info["features_used"] = decision.features_used
 
                 print(f"Task {task.task_id} (sample {sample_id}): "
@@ -297,14 +330,14 @@ class RepresentativeWorkloadEvaluator:
                     self.edge_tasks.append(task_info)
 
             except Exception as e:
-                print(f"MLP prediction failed for {task.task_id}: {e}")
-                task_info["mlp_prediction"] = "ERROR"
+                print(f"{self.config.policy.upper()} prediction failed for {task.task_id}: {e}")
+                task_info["prediction"] = "ERROR"
                 task_info["execution_status"] = "PREDICTION_FAILED"
                 task_info["features_used"] = None
 
         # Count predictions
-        edge_predictions = sum(1 for t in self.workload_tasks if t.get("mlp_prediction") == "Edge")
-        cloud_predictions = sum(1 for t in self.workload_tasks if t.get("mlp_prediction") == "Cloud")
+        edge_predictions = sum(1 for t in self.workload_tasks if t.get("prediction") == "Edge")
+        cloud_predictions = sum(1 for t in self.workload_tasks if t.get("prediction") == "Cloud")
 
         print(f"\nPrediction Summary:")
         print(f"  Edge predictions: {edge_predictions}")
@@ -320,7 +353,7 @@ class RepresentativeWorkloadEvaluator:
         print(f"Step 4: Executing {len(self.edge_tasks)} Edge Tasks")
         print("="*60)
 
-        # Use the same simulator that was initialized in _evaluate_mlp_predictions
+        # Use the same simulator that was initialized in _evaluate_predictions
         # This ensures topology consistency
         execution_simulator = self.simulator
 
@@ -465,7 +498,7 @@ class RepresentativeWorkloadEvaluator:
                 task_id=task.task_id,
                 sample_id=task_info["sample_id"],
                 analytical_label=task_info["analytical_label"],
-                mlp_prediction=task_info.get("mlp_prediction", "ERROR"),
+                prediction=task_info.get("prediction", "ERROR"),
                 execution_status=task_info.get("execution_status", "UNKNOWN"),
                 selected_edge_server_id=task_info.get("selected_server_id"),
                 features_used=task_info.get("features_used"),
@@ -498,8 +531,8 @@ class RepresentativeWorkloadEvaluator:
 
         # Calculate coverage metrics
         total_tasks = len(self.results.task_results)
-        edge_predictions = sum(1 for r in self.results.task_results if r.mlp_prediction == "Edge")
-        cloud_predictions = sum(1 for r in self.results.task_results if r.mlp_prediction == "Cloud")
+        edge_predictions = sum(1 for r in self.results.task_results if r.prediction == "Edge")
+        cloud_predictions = sum(1 for r in self.results.task_results if r.prediction == "Cloud")
         executed_tasks = sum(1 for r in self.results.task_results if r.execution_status == "EXECUTED")
 
         self.results.prediction_edge_rate = edge_predictions / total_tasks if total_tasks > 0 else 0
@@ -515,7 +548,7 @@ class RepresentativeWorkloadEvaluator:
         print(f"  Execution coverage: {self.results.execution_coverage:.1%}")
 
     def _calculate_confusion_matrix(self) -> None:
-        """Calculate confusion matrix for MLP predictions."""
+        """Calculate confusion matrix for model predictions."""
         # Initialize confusion matrix
         self.results.confusion_matrix = {
             "Edge": {"Edge": 0, "Cloud": 0},
@@ -525,7 +558,7 @@ class RepresentativeWorkloadEvaluator:
         # Count predictions vs labels
         for result in self.results.task_results:
             true_label = result.analytical_label
-            predicted = result.mlp_prediction
+            predicted = result.prediction
 
             if true_label in self.results.confusion_matrix and predicted in self.results.confusion_matrix[true_label]:
                 self.results.confusion_matrix[true_label][predicted] += 1
@@ -649,19 +682,25 @@ class RepresentativeWorkloadEvaluator:
 
     def generate_report(self, output_path: Path) -> None:
         """Generate comprehensive markdown report."""
+        policy_name = self.results.config.policy.upper()
+        model_description = (
+            "Frozen MLP_final_6 model artifact (no retraining)"
+            if self.results.config.policy == "mlp"
+            else "WiSARD WISARD_FINAL_6 (thermometer/64 bits/addr 16/bleaching; selected on validation) trained in-session on dataset.train"
+        )
         lines = [
-            "# MLP Representative Workload Evaluation Report",
+            f"# {policy_name} Representative Workload Evaluation Report",
             "",
             "## Objective",
             "",
-            "Evaluate MLP_final_6 on a representative workload containing both Edge and Cloud",
+            f"Evaluate {policy_name} on a representative workload containing both Edge and Cloud",
             "cases to test the model's Edge/Cloud decision capability without altering the model.",
             "",
             "## Methodology",
             "",
             "- Frozen workload: exact dataset sample IDs fixed before this evaluation",
             "- Fixed composition: 50% Edge, 50% Cloud analytical labels",
-            "- Frozen MLP model (no retraining)",
+            f"- {model_description}",
             "- Same Task object used for decision and execution (identity preserved)",
             "- Task deadlines taken from the dataset (DeadlineMs per sample)",
             "- Processing rate matches the C# analytical Edge capacity (12 GHz)",
@@ -671,6 +710,7 @@ class RepresentativeWorkloadEvaluator:
             "",
             "## Configuration",
             "",
+            f"- **Policy**: {self.results.config.policy}",
             f"- **Experiment ID**: {self.results.config.experiment_id}",
             f"- **Workload Size**: {self.results.config.workload_size}",
             f"- **Selection Seed**: {self.results.config.selection_seed}",
@@ -724,7 +764,7 @@ class RepresentativeWorkloadEvaluator:
             server = result.selected_edge_server_id if result.selected_edge_server_id else "N/A"
             lines.append(
                 f"| {result.task_id} | {result.sample_id} | {result.analytical_label} | "
-                f"{result.mlp_prediction} | {result.execution_status} | {server} |"
+                f"{result.prediction} | {result.execution_status} | {server} |"
             )
 
         lines.extend([
@@ -800,9 +840,9 @@ class RepresentativeWorkloadEvaluator:
             f"({self.results.workload_labels.count('Cloud')/len(self.results.workload_labels):.1%})",
             "",
             "### Prediction Distribution",
-            f"- Edge predictions: {sum(1 for r in self.results.task_results if r.mlp_prediction == 'Edge')}/{len(self.results.task_results)} "
+            f"- Edge predictions: {sum(1 for r in self.results.task_results if r.prediction == 'Edge')}/{len(self.results.task_results)} "
             f"({self.results.prediction_edge_rate:.1%})",
-            f"- Cloud predictions: {sum(1 for r in self.results.task_results if r.mlp_prediction == 'Cloud')}/{len(self.results.task_results)} "
+            f"- Cloud predictions: {sum(1 for r in self.results.task_results if r.prediction == 'Cloud')}/{len(self.results.task_results)} "
             f"({self.results.prediction_cloud_rate:.1%})",
             "",
             "### Error Analysis",
@@ -825,11 +865,10 @@ class RepresentativeWorkloadEvaluator:
             "   tasks cannot be executed and are marked CLOUD_UNAVAILABLE.",
             "2. **Execution Coverage**: The execution coverage metric is diagnostic only - it shows",
             "   how much workload can be processed with current infrastructure, not policy quality.",
-            "3. **Network Feature Semantics**: Runtime BandwidthMbps/NetworkLatencyMs are derived",
-            "   from the EdgeSimPy topology (bottleneck bandwidth and average path delay across all",
-            "   EdgeServers). In the C# dataset these columns are per-task sampled WAN parameters used",
-            "   only on the Cloud path. They are NOT the same random variables - this is a documented",
-            "   contract mismatch, not a unit-conversion issue.",
+            "3. **Network Feature Semantics**: BandwidthMbps/NetworkLatencyMs are per-scenario WAN",
+            "   conditions on the user->Cloud path (dataset contract) carried on the Task as scenario",
+            "   attributes. The topology-derived computation remains only as a documented fallback",
+            "   for Tasks without explicit WAN attributes, and is not the same random variable.",
             "4. **Frozen Workload**: Sample IDs span the full dataset (not a single split). This is",
             "   the frozen contract from the original experiment and must not be re-selected.",
             "5. **Processing Rate**: Edge execution uses 12 GHz to match the C# analytical",
@@ -854,6 +893,7 @@ class RepresentativeWorkloadEvaluator:
         """Save results as JSON for programmatic access."""
         results_dict = {
             "config": {
+                "policy": self.results.config.policy,
                 "experiment_id": self.results.config.experiment_id,
                 "workload_size": self.results.config.workload_size,
                 "selection_seed": self.results.config.selection_seed,
@@ -885,7 +925,7 @@ class RepresentativeWorkloadEvaluator:
                     "task_id": r.task_id,
                     "sample_id": r.sample_id,
                     "analytical_label": r.analytical_label,
-                    "mlp_prediction": r.mlp_prediction,
+                    "prediction": r.prediction,
                     "execution_status": r.execution_status,
                     "selected_edge_server_id": r.selected_edge_server_id,
                     "transmission_time_s": r.transmission_time_s,
@@ -909,7 +949,15 @@ class RepresentativeWorkloadEvaluator:
 
 def main():
     """Main execution function."""
-    config = RepresentativeWorkloadConfig()
+    policy = sys.argv[1].lower() if len(sys.argv) > 1 else "mlp"
+    if policy not in ("mlp", "wisard"):
+        print(f"Unknown policy {policy!r}; expected 'mlp' or 'wisard'")
+        return 2
+
+    config = RepresentativeWorkloadConfig(
+        policy=policy,
+        experiment_id=f"{policy}_representative_workload_v1",
+    )
 
     evaluator = RepresentativeWorkloadEvaluator(config)
     results = evaluator.run_evaluation()
@@ -918,15 +966,15 @@ def main():
     results_dir = Path(__file__).resolve().parents[1] / "results"
     results_dir.mkdir(exist_ok=True)
 
-    evaluator.generate_report(results_dir / "mlp_representative_workload.md")
-    evaluator.save_results_json(results_dir / "mlp_representative_workload.json")
+    evaluator.generate_report(results_dir / f"{policy}_representative_workload.md")
+    evaluator.save_results_json(results_dir / f"{policy}_representative_workload.json")
 
     print("\n" + "="*70)
     print("Evaluation Complete")
     print("="*70)
     print(f"Total tasks: {len(results.task_results)}")
-    print(f"Edge predictions: {sum(1 for r in results.task_results if r.mlp_prediction == 'Edge')}")
-    print(f"Cloud predictions: {sum(1 for r in results.task_results if r.mlp_prediction == 'Cloud')}")
+    print(f"Edge predictions: {sum(1 for r in results.task_results if r.prediction == 'Edge')}")
+    print(f"Cloud predictions: {sum(1 for r in results.task_results if r.prediction == 'Cloud')}")
     print(f"Executed tasks: {results.systemic_metrics.get('executed_tasks', 0)}")
     print(f"Accuracy: {results.accuracy:.3f}")
 

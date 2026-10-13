@@ -11,7 +11,7 @@ from .dataset import (
 )
 from .mlp_model import MLPConfig, MLPModel
 from .preprocessing import MinMaxNormalizer, WiSARDEncoder
-from .wisard_model import WiSARDConfig, WiSARDModel
+from .wisard_model import WISARD_CSHARP_EQUIVALENT, WISARD_FINAL_6, WiSARDConfig, WiSARDModel
 
 __all__ = [
     "EDGE_SIMPY_CONTEXT_FEATURES",
@@ -27,4 +27,6 @@ __all__ = [
     "WiSARDEncoder",
     "WiSARDConfig",
     "WiSARDModel",
+    "WISARD_CSHARP_EQUIVALENT",
+    "WISARD_FINAL_6",
 ]

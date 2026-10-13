@@ -33,6 +33,10 @@ class NormalizationParams:
         )
 
 
+WISARD_ENCODINGS = ("binary", "thermometer")
+MAX_BINARY_BITS = 62
+
+
 @dataclass(frozen=True)
 class WiSARDQuantizationParams:
     """Parameters for WiSARD bit quantization fitted on training data."""
@@ -40,12 +44,14 @@ class WiSARDQuantizationParams:
     normalization: NormalizationParams
     bits_per_feature: int
     total_bits: int
+    encoding: str = "binary"
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "normalization": self.normalization.to_dict(),
             "bits_per_feature": self.bits_per_feature,
             "total_bits": self.total_bits,
+            "encoding": self.encoding,
         }
 
 
@@ -95,10 +101,31 @@ class MinMaxNormalizer:
 
 
 class WiSARDEncoder:
-    """Encode features for WiSARD using quantization to bits."""
+    """Encode features for WiSARD using quantization to bits.
 
-    def __init__(self, bits_per_feature: int = 4) -> None:
+    Encodings (per feature, after min-max normalization fitted on train):
+    - "binary": positional binary code of the quantized level in
+      [0, 2^bits - 1]. Mirrors the C# WisardStrategy. Adjacent levels can
+      differ in many bits (7=0111 vs 8=1000), which weakens the address
+      locality WiSARD relies on for generalization.
+    - "thermometer": unary code - level k in [0, bits] turns on the first k
+      bits. Adjacent levels always differ by exactly one bit (canonical
+      WiSARD input encoding). Resolution is bits + 1 levels.
+    """
+
+    def __init__(self, bits_per_feature: int = 4, encoding: str = "binary") -> None:
+        if encoding not in WISARD_ENCODINGS:
+            raise ValueError(f"encoding must be one of {WISARD_ENCODINGS}, got {encoding!r}")
+        if bits_per_feature < 1:
+            raise ValueError("bits_per_feature must be >= 1")
+        if encoding == "binary" and bits_per_feature > MAX_BINARY_BITS:
+            # Quantized level 2^bits - 1 must fit in int64 without overflow
+            raise ValueError(
+                f"binary encoding supports at most {MAX_BINARY_BITS} bits per feature "
+                f"(int64 level range), got {bits_per_feature}"
+            )
         self.bits_per_feature = bits_per_feature
+        self.encoding = encoding
         self._normalizer = MinMaxNormalizer()
         self._params: WiSARDQuantizationParams | None = None
 
@@ -109,6 +136,7 @@ class WiSARDEncoder:
             normalization=self._normalizer.params,
             bits_per_feature=self.bits_per_feature,
             total_bits=X.shape[1] * self.bits_per_feature,
+            encoding=self.encoding,
         )
 
     def transform(self, X: np.ndarray) -> np.ndarray:
@@ -118,16 +146,23 @@ class WiSARDEncoder:
 
         normalized = self._normalizer.transform(X)
         n_samples, n_features = normalized.shape
+        nb = self.bits_per_feature
+
+        if self.encoding == "thermometer":
+            levels = np.round(normalized * nb).astype(int)  # [0, nb]
+            # bit b of feature i is on iff b < level_i
+            bits = np.arange(nb)[None, None, :] < levels[:, :, None]
+            return bits.reshape(n_samples, n_features * nb)
 
         # Quantize each feature to bits_per_feature bits
-        max_level = (1 << self.bits_per_feature) - 1
-        quantized = np.round(normalized * max_level).astype(int)
+        max_level = (1 << nb) - 1
+        quantized = np.round(normalized * max_level).astype(np.int64)
 
         # Convert to binary representation
-        bits = np.zeros((n_samples, n_features * self.bits_per_feature), dtype=bool)
+        bits = np.zeros((n_samples, n_features * nb), dtype=bool)
         for i in range(n_features):
-            for b in range(self.bits_per_feature):
-                bits[:, i * self.bits_per_feature + b] = (quantized[:, i] >> b) & 1 == 1
+            for b in range(nb):
+                bits[:, i * nb + b] = (quantized[:, i] >> b) & 1 == 1
 
         return bits
 

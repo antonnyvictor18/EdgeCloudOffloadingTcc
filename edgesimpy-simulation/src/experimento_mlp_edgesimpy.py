@@ -555,7 +555,7 @@ def generate_report(results: ExperimentResults, output_path: Path) -> None:
         "",
         "### Three Levels of Evaluation",
         "",
-        "1. **Predictive Level**: Accuracy, F1 (measured on test set: 83.20%)",
+        "1. **Predictive Level**: Accuracy, F1 (measured on test set: 81.73%, see results/final_test_evaluation.md)",
         "2. **Decision Level**: Edge/Cloud prediction, EdgeServer selection",
         "3. **Systemic Level**: Transmission, queue, execution, completion, deadline",
         "",

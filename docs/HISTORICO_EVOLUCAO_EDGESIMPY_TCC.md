@@ -4016,3 +4016,171 @@ BandwidthMbps e NetworkLatencyMs tinham semanticas diferentes:
 **Nao implementado** (propositalmente): retreino, tuning, Cloud, fallback, conversao de features de rede, alteracao no EdgeSimPy.
 
 **Relatorio completo:** edgesimpy-simulation/results/PARITY_AUDIT_REPORT.md
+
+## 36. Fase 17: Integracao WiSARD ao pipeline corrigido (12/10/2026)
+
+**Objetivo:** Conectar o WiSARD ao mesmo pipeline auditado do MLP (Task -> extracao de features -> predict -> CLOUD_UNAVAILABLE/execucao), no contrato congelado de 6 features.
+
+### Decisao de contrato
+
+O WiSARD C# (`WisardStrategy.cs`) usa o vetor `Features()` completo de **12 features** — incluindo DeadlineMs e estado de servidores (EdgeCpuUsagePercent, EdgeQueueSize, CloudCpuUsagePercent, CloudQueueSize) que nao tem equivalente como atributo de Task no EdgeSimPy — e FeatureRanges fixas. O WiSARD Python foi treinado sobre o **mesmo contrato congelado de 6 features** do MLP (encoder min-max+quantizacao ajustado em dataset.train). Nao e um port bit-a-bit da estrategia C#; e um WiSARD sob o contrato compartilhado. Documentado em `WiSARDOffloadingConfig`.
+
+### Implementacao
+
+| Arquivo | Alteracao |
+|---------|-----------|
+| src/policies/ml_offloading.py | Extracao de features refatorada para funcoes compartilhadas (`extract_task_features`, `_bandwidth_feature`, `_network_latency_feature`) — fonte unica para MLP e WiSARD; nova `WiSARDOffloadingPolicy` (mesmo contrato OffloadingDecision; raw features -> encoder interno; Cloud -> CLOUD_UNAVAILABLE; `scores_for_task`/`scores` expoe contagens dos discriminadores) |
+| src/experimento_mlp_workload_representativo.py | Parametrizado por politica (`python src/... [mlp|wisard]`); WiSARD treina em dataset.train na sessao; `mlp_prediction` renomeado para `prediction`; outputs `{policy}_representative_workload.{md,json}` |
+| src/test_wisard_policy_parity.py | Novo: paridade Task<->modelo (predicoes E scores), determinismo de treino, contrato do encoder, contrato de decisao |
+
+### Resultados
+
+- **Paridade: 20/20 exata** — predicoes e scores dos discriminadores identicos entre `model.predict(X_raw)` e `policy.predict(Task)`
+- **Determinismo**: mesmo seed+dados -> predicoes e parametros do encoder identicos
+- **Encoder**: 4 bits/feature, 24 bits totais, ajustado apenas no split de treino; clipping fora da faixa verificado
+- **Contrato de decisao**: Cloud -> CLOUD_UNAVAILABLE, Edge -> PENDING
+
+### Workload congelado 50/50 (mesmos 20 IDs do MLP)
+
+| Metrica | MLP | WiSARD |
+|---------|-----|--------|
+| Predicoes | 11 Edge / 9 Cloud | **20 Edge / 0 Cloud** |
+| Accuracy | 0.850 | **0.500** |
+| Confusion matrix | [[9,1],[2,8]] | [[10,0],[10,0]] |
+| Executadas | 11 | 20 |
+| CLOUD_UNAVAILABLE | 9 | 0 |
+
+### Achado: WiSARD sub-capacitado no contrato de 6 features
+
+Diagnostico no split de validacao completo (offline, modelo cru):
+
+- accuracy 62.76% (baseline maioria Edge ~62.4%) — poder discriminativo quase nulo
+- edge_rate 99.5%; tie_rate 78-87% nos scores
+- Causa estrutural: 6 features x 4 bits = 24 bits de entrada -> apenas **3 RAMs** por discriminador (ceil(24/8)). Com 10.5k amostras de treino, os discriminadores saturam (Edge score fixo em 3.00/3) e o desempate pro-Edge decide a maioria das amostras
+- O WiSARD C# de 12 features gera 48 bits -> 6 RAMs (contrato diferente; nao comparavel diretamente)
+
+**Conclusao**: a integracao esta correta (paridade exata); o comportamento all-Edge e limitacao do modelo nos hiperparametros default sob este contrato — nao bug de pipeline. Tuning (bits_per_feature, address_size, bleach) fica fora do escopo desta etapa, conforme restricao estabelecida.
+
+### Status
+
+**INTEGRACAO CONCLUIDA E VALIDADA.** Regressoes: test_wisard_policy_parity, test_mlp_policy_parity (20/20), test_ml_models, test_ml_dataset, test_task_scheduler_with_network — todas passam.
+
+**Nao implementado**: tuning WiSARD, Cloud, retreino, alteracao de contrato/features.
+
+## 37. Fase 18: Estudo controlado de hiperparametros do WiSARD (12/10/2026)
+
+**Objetivo:** Resolver o colapso all-Edge do WiSARD no contrato de 6 features (Fase 17) por meio de selecao de modelo rigorosa — nao "ajustar ate melhorar".
+
+### Protocolo (pre-registrado antes de ver resultados)
+
+- Treino em `dataset.train`; **selecao somente em `dataset.validation`**; test set intocado.
+- Metrica primaria: **macro-F1**. Accuracy reportada mas nao usada para selecao (prior 62/38 faz accuracy premiar o colapso para a maioria — exatamente o modo de falha estudado).
+- 5 seeds de mapeamento de RAMs por configuracao; media ± desvio; selecao pela media. Desempate: menos bits, depois menos celulas de RAM.
+- Grid: encoding {binary, thermometer} x bits {4,8,16,32,64} x address {2,4,8,16} x bleaching {off,on} = 72 configs validas x 5 seeds = 360 treinos (~1 min).
+
+### Diagnostico de desenho que motivou o espaco de busca
+
+1. **Codificacao binaria posicional destroi localidade**: niveis vizinhos 7=0111 e 8=1000 diferem em 4 bits (Hamming medio 1,73 entre vizinhos). WiSARD generaliza por sobreposicao de enderecos; a codificacao canonica e **termometro** (Hamming 1 entre vizinhos).
+2. **Capacidade**: 24 bits / 8 = 3 RAMs -> scores em {0..3}, empates inevitaveis.
+3. **Empates sem bleaching**: 78-87% das amostras empatavam e o desempate fixo pro-Edge gerava o colapso. **Bleaching** (RAMs guardam contagens; limiar sobe ate desempatar) e a tecnica padrao.
+
+### Implementacao
+
+| Arquivo | Alteracao |
+|---------|-----------|
+| src/ml/preprocessing.py | `WiSARDEncoder(encoding="binary"\|"thermometer")`; validacao de bits (binario <= 62 por int64) |
+| src/ml/wisard_model.py | RAMs como contagens densas (scoring vetorizado); `bleaching`; `scores()` publico (scores por classe, limiar, empate residual); `WISARD_CSHARP_EQUIVALENT` e `WISARD_FINAL_6` nomeados. **Default inalterado e bit-a-bit equivalente** ao modelo anterior (predicoes identicas verificadas) |
+| src/experimento_tuning_wisard.py | Novo: grid, efeitos marginais, referencia Majority e MLP_final_6, relatorios `results/wisard_tuning.{md,json}` |
+| src/policies/ml_offloading.py | `WiSARDOffloadingConfig.model` default = `WISARD_FINAL_6` |
+
+### Resultados (validation, media de 5 seeds)
+
+| Configuracao | macro-F1 | accuracy | recall Cloud | Edge rate | tie rate |
+|---|---:|---:|---:|---:|---:|
+| C#-equivalente (binary/4/8/sem bleaching) | 0.395 | 0.626 | 0.011 | 0.994 | 0.835 |
+| C#-equivalente + bleaching apenas | 0.720 ± 0.028 | 0.755 | 0.544 | 0.722 | 0.000 |
+| **Selecionada: thermometer/64/16/bleaching** (24 RAMs) | **0.729 ± 0.011** | **0.760** | 0.559 | 0.716 | 0.000 |
+| Majority (sempre Edge) | 0.384 | 0.624 | 0.000 | 1.000 | — |
+| MLP_final_6 (referencia) | 0.807 | 0.822 | — | — | — |
+
+**Efeitos marginais (macro-F1)**: bleaching off=0.430 / on=0.659 (**fator dominante, +0.23**); address 2=0.510, 4=0.527, 8=0.547, **16=0.594**; thermometer 0.550 vs binary 0.538; bits praticamente irrelevante (0.537-0.575).
+
+### Leitura honesta
+
+- **Quase todo o ganho vem do bleaching**: so adiciona-lo a configuracao C# ja da 0.720. Era um problema de resolucao de empates, nao de capacidade.
+- **Plato no topo**: thermometer/addr16/bleaching com 8, 16, 32 e 64 bits ficam em 0.721-0.729 com sd ~0.01 — estatisticamente indistinguiveis. A regra pre-registrada (maior media) seleciona 64/16; a diferenca de 0.0005 para 32/16 nao e ganho real.
+- **WiSARD ajustado continua abaixo do MLP** (0.729 vs 0.807 macro-F1 no validation). Achado legitimo para o TCC.
+
+### Workload congelado 50/50 (mesmos 20 IDs)
+
+| Metrica | WiSARD C#-equiv. (Fase 17) | **WiSARD FINAL_6** | MLP_final_6 |
+|---|---|---|---|
+| Predicoes | 20 Edge / 0 Cloud | **10 Edge / 10 Cloud** | 11 Edge / 9 Cloud |
+| Accuracy | 0.500 | **0.800** | 0.850 |
+| Confusion matrix | [[10,0],[10,0]] | [[8,2],[2,8]] | [[9,1],[2,8]] |
+| Executadas / CLOUD_UNAVAILABLE | 20 / 0 | 10 / 10 | 11 / 9 |
+| Deadline violations (Edge exec.) | 20/20 | 10/10 | 11/11 |
+
+Paridade `test_wisard_policy_parity.py`: 20/20 em predicoes e scores (agora com margens reais, ex. Cloud 24 vs Edge 23 em 24 RAMs).
+
+### Status
+
+**CONCLUIDO.** Regressoes: test_wisard_policy_parity, test_mlp_policy_parity (20/20), test_ml_models, test_ml_dataset — todas passam. Test set permanece intocado.
+
+**Nao implementado**: avaliacao no test set, Cloud, alteracao do MLP ou do contrato de features.
+
+## 38. Fase 19: Avaliacao final no test set + bug de reprodutibilidade do split (13/10/2026)
+
+**Objetivo:** Avaliar uma unica vez, no test set intocado, os dois modelos congelados (`MLP_final_6`, `WISARD_FINAL_6`), com intervalos de confianca e comparacao pareada.
+
+### Bug critico descoberto durante a avaliacao: split nao reproduzivel entre processos
+
+Ao verificar o artefato MLP, o mesmo arquivo deu accuracy 0.8173 em um processo e 0.8116 em outro — impossivel num pipeline deterministico. Causa raiz em `ml/dataset.py::_stratified_split` (e `dataset_full.py`):
+
+```python
+buckets = {label: [] for label in VALID_LABELS}   # VALID_LABELS e um frozenset
+```
+
+A ordem de iteracao de um frozenset de strings depende do `PYTHONHASHSEED` (aleatorio por processo). Como o RNG do split e consumido por classe na ordem de iteracao, existiam **duas instancias distintas do split** (Cloud-first / Edge-first), sorteadas 50/50 a cada processo. Dentro de um processo o split era consistente; **entre processos, nao**.
+
+Consequencias:
+
+1. O valor historico **"83.2% no test set"** (Fases 13-14) vinha de um modelo treinado *no outro split* (Edge-first) — retreinar la reproduz 0.832; retreinar no split Cloud-first reproduz **exatamente os pesos do artefato** `mlp_final_6` (verificado: pesos e normalizer identicos). O artefato congelado nunca teve 83.2%; seu valor legitimo e **0.8173** no test do seu proprio split.
+2. Avaliar o artefato no test do outro split (0.8116) era **contaminado** — aquele "test" se sobrepoe ao train do artefato.
+3. Os runs anteriores de tuning/workload do WiSARD cairam em splits distintos; por isso os numeros de validation (0.729) e o workload (10/10) mudaram ligeiramente ao fixar o split.
+
+**Correcao:** iteracao em `sorted(VALID_LABELS)` nos dois loaders — produz sempre o split Cloud-first, que e o do artefato MLP. Teste de regressao `test_split_reproducible_across_processes` (fingerprint dos primeiros sample_ids + normalizer do artefato == mins do train canonico), validado com `PYTHONHASHSEED` 0, 1 e 5.
+
+### Protocolo da avaliacao final (`src/experimento_avaliacao_test_set.py`)
+
+- Modelos exatamente como congelados: MLP do artefato; WiSARD treinado so em `train` (sem refit em train+val, consistente com a selecao).
+- IC 95% bootstrap percentil (2000 reamostragens, seed 2026).
+- Comparacao MLP vs WiSARD por **McNemar exato** (pareado — mesmas amostras).
+- Shift validation -> test para detectar otimismo de selecao.
+- **Fechamento de paridade no test inteiro**: `policy.predict(Task) == model.predict(X_raw)` nas 2250 amostras, para os dois modelos.
+- Sensibilidade do WiSARD aos 5 seeds de mapeamento (modelo congelado = seed 7).
+
+### Resultados (test set canonico, n=2250, primeira utilizacao)
+
+| Modelo | accuracy [IC95] | macro-F1 [IC95] | bal. acc | recall Cloud | CM [Cloud,Edge] |
+|---|---|---|---:|---:|---|
+| **MLP_final_6** | **0.817** [0.802, 0.833] | **0.803** [0.787, 0.820] | 0.800 | 0.730 | [[617,228],[183,1222]] |
+| **WISARD_FINAL_6** | 0.747 [0.729, 0.764] | 0.718 [0.698, 0.737] | 0.711 | 0.568 | [[480,365],[204,1201]] |
+| Majority (Edge) | 0.624 [0.604, 0.644] | 0.384 | 0.500 | 0.000 | [[0,845],[0,1405]] |
+
+- **McNemar**: 284 amostras MLP-certo/WiSARD-errado vs 126 o inverso; p = 4e-15. A superioridade do MLP e estatisticamente inequivoca; ICs nao se sobrepoem.
+- **Shift validation -> test**: MLP 0.799 -> 0.803 macro-F1 (sem otimismo). WiSARD seed 7: 0.745 -> 0.718 (-0.027). O seed 7 foi o melhor dos 5 no validation — otimismo de selecao do *seed*; a *configuracao* generaliza: media dos 5 seeds no test 0.729 ± 0.011 vs 0.738 ± 0.009 no validation.
+- **Paridade**: 0 divergencias / 2250 para MLP e para WiSARD. O pipeline Task -> politica reproduz o modelo em todo o test set.
+- Ambos os modelos superam a maioria com folga; o WiSARD de 6 features e um classificador fraco porem valido (recall Cloud 0.57).
+
+### Retracoes/correcoes de documentacao
+
+- "MLP_final_6 = 83.2% test" substituido por **81.7%** (artefato, split canonico) em README, PARITY_AUDIT_REPORT e textos gerados por `experimento_comparativo_sistemico.py` / `experimento_mlp_edgesimpy.py`. Relatorios historicos gerados (`mlp_4_variants_comparison.md`, `relatorio_final_feature_set_6features.md`) permanecem como registro — seus numeros referem-se ao split Edge-first.
+- Workload WiSARD reexecutado no split canonico: **12 Edge / 8 Cloud, accuracy 0.800**, CM [[9,1],[3,7]] (antes 10/10 no outro split). MLP inalterado (artefato independe do split): 11/9, 0.850.
+- Tuning WiSARD reexecutado: mesma configuracao selecionada; validation 0.738 ± 0.009.
+
+### Status
+
+**CONCLUIDO.** Nivel preditivo fechado para os dois modelos. Test set agora deve ser considerado *usado*; qualquer nova selecao de modelo exigiria novo split ou validacao cruzada.
+
+**Proximo passo natural**: representacao de Cloud no EdgeSimPy para avaliar o nivel sistemico das predicoes Cloud (hoje CLOUD_UNAVAILABLE).

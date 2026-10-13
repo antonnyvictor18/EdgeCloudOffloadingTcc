@@ -211,7 +211,12 @@ def _stratified_split(
     seed: int,
 ) -> tuple[SplitDataset, SplitDataset, SplitDataset]:
     randomizer = random.Random(seed)
-    buckets: dict[str, list[int]] = {label: [] for label in VALID_LABELS}
+    # Iterate labels in sorted order. VALID_LABELS is a frozenset whose
+    # iteration order depends on per-process string hashing (PYTHONHASHSEED),
+    # which previously made the split itself non-reproducible across
+    # processes. Sorted order ("Cloud", "Edge") is the one the frozen
+    # MLP_final_6 artifact was trained under.
+    buckets: dict[str, list[int]] = {label: [] for label in sorted(VALID_LABELS)}
     for index, label in enumerate(data.y):
         buckets[label].append(index)
 
