@@ -4184,3 +4184,108 @@ Consequencias:
 **CONCLUIDO.** Nivel preditivo fechado para os dois modelos. Test set agora deve ser considerado *usado*; qualquer nova selecao de modelo exigiria novo split ou validacao cruzada.
 
 **Proximo passo natural**: representacao de Cloud no EdgeSimPy para avaliar o nivel sistemico das predicoes Cloud (hoje CLOUD_UNAVAILABLE).
+
+## 39. Fase 20: Unidades de rede coerentes com o EdgeSimPy (13/10/2026)
+
+**Objetivo:** Pre-requisito para qualquer comparacao Edge vs Cloud: eliminar a "hipotese operacional" `data_to_transfer = MB * 1024`.
+
+### Evidencia da convencao nativa do EdgeSimPy
+
+- `ContainerLayer.size` e documentado **em megabytes** e e passado diretamente como `data_to_transfer` (`edge_server.py:206`).
+- `NetworkFlow.step()` faz `data_to_transfer -= min(bandwidth)` **uma vez por tick** -> `link.bandwidth` e MB/tick. Com `tick_duration = 1 s`, o link do tutorial (12.5) significa 12.5 MB/s = **100 Mbps**.
+- O `* 1024` (MB -> KB) inflava transmissoes em 1024x e tornava impossivel comparar com o contrato WAN do C# (`TaskSizeMB * 8 / BandwidthMbps`).
+
+### Correcao
+
+`integration/task_network_flow.py`: `data_to_transfer = task.data_size_mb`. Testes `test_task_network_flow` e `test_task_scheduler_with_network` tiveram o payload escalado (0.1 -> 100 MB) para continuar exercitando transferencia multi-tick; 10/10 validacoes passam.
+
+### Impacto nos workloads congelados (mesmas predicoes; so a execucao muda)
+
+| | Antes (x1024) | MLP agora | WiSARD agora |
+|---|---|---|---|
+| Steps | ~17.700-20.300 | 20 | 21 |
+| Mean transmission | ~4800 s | 4.18 s | 4.67 s |
+| Mean queue | ~0 (invisivel) | **2.09 s** | 2.00 s |
+| Mean completion | ~4800-5800 s | 8.27 s | 8.67 s |
+| Deadline violations | 100% | 81.8% (9/11) | 83.3% (10/12) |
+
+A contencao de fila passa a ser observavel; as violacoes restantes sao um achado real (11-12 tasks simultaneas em 100 Mbps, deadlines 0.3-5.9 s, tick de 1 s), nao um artefato de unidade.
+
+## 40. Fase 21: Cloud logico com WAN por-Task (opcao B) — workload 100% executavel (13/10/2026)
+
+**Decisao de desenho (tomada em conjunto):** entre (A) no Cloud na topologia com link WAN fixo, (B) Cloud logico com WAN da propria Task, (C) hibrido e (D) adiar, escolheu-se **B**: e a unica que preserva a propriedade conquistada na auditoria — *a Task decidida e a Task executada, com os mesmos atributos* — e responde a pergunta Edge **vs** Cloud. A circularidade parcial do termo de rede e **declarada**, nao escondida atras de um link fixo que contradiz o contrato por-Task do dataset.
+
+### Implementacao
+
+| Arquivo | Conteudo |
+|---------|----------|
+| src/integration/cloud_executor.py | `CloudExecutor`: destino logico fora do grafo. Upload = `data_size_mb*8/task.bandwidth_mbps`; propagacao = `task.network_latency_ms/1000`; chegada quantizada ao tick (ceil); fila FIFO + execucao a **60 GHz** (`CloudCapacityCyclesPerMs`) reutilizando `TaskScheduler`; `CloudNode` duck-typed. Sem WAN na Task -> `ValueError` (sem fallback) |
+| src/test_cloud_executor.py | Tempos conferidos contra a formula C#; quantizacao; FIFO/contencao; rejeicao sem WAN; atributos da Task inalterados |
+| src/experimento_mlp_workload_representativo.py | `_execute_tasks`: Edge (NetworkFlow + scheduler 12 GHz) e Cloud (CloudExecutor) **na mesma simulacao/relogio**; status `EXECUTED_CLOUD`; metricas sistemicas agregadas e por destino; `execute_cloud=False` mantem `CLOUD_UNAVAILABLE` |
+
+### Resultado: workload congelado 50/50 com 20/20 tasks executadas
+
+| | MLP_final_6 | WISARD_FINAL_6 |
+|---|---|---|
+| Predicoes | 11 Edge / 9 Cloud | 12 Edge / 8 Cloud |
+| Accuracy | 0.850 | 0.800 |
+| Executadas | **20/20** (11 Edge + 9 Cloud) | **20/20** (12 Edge + 8 Cloud) |
+| Steps | 20 | 21 |
+| Mean completion (todas) | 7.25 s | 7.40 s |
+| Deadline violation (todas) | 80.0% | 75.0% |
+| Edge: mean transmission / queue / completion | 4.18 / 2.09 / 8.27 s | 4.67 / 2.00 / 8.67 s |
+| Edge: deadline violation | 81.8% | 83.3% |
+| Cloud: mean transmission / queue / completion | 0.07 / 4.00 / 6.00 s | — / 3.00 / 5.50 s |
+| Cloud: deadline violation | 77.8% | 62.5% |
+
+### Leitura
+
+- O WAN do dataset (2-999 Mbps) torna o upload Cloud quase sempre sub-segundo (media 0.07 s), enquanto o Edge paga 100 Mbps compartilhados por 11-12 fluxos simultaneos (media 4-5 s). Coerente com o modelo C#, onde o Edge nao paga rede *analiticamente* mas no EdgeSimPy paga LAN real.
+- **Achado dominante: quantizacao do tick (1 s).** Execucoes de 0.02-0.5 s ocupam um tick inteiro e o `TaskScheduler` so libera o servidor no tick seguinte -> cada task na fila custa >= 1 s. Com 8-9 tasks Cloud chegando no mesmo tick, a fila Cloud cresce 1 s por task (queue media 3-4 s) apesar da execucao media de 0.065 s. Deadlines do dataset sao 0.3-5.9 s. **A maior parte das violacoes, em ambos os destinos, e artefato da resolucao temporal**, nao do destino — afeta Edge e Cloud igualmente (comparacao justa), mas limita a interpretacao absoluta das taxas de violacao.
+- Coerencia decisao/execucao mantida: snapshot das 7 propriedades verificado para todas as 20 tasks (Edge e Cloud).
+
+### Limitacoes declaradas
+
+1. Termo de rede Cloud e analitico (mesma familia de formula do rotulo) — circularidade parcial. Fila, ordem de chegada, quantizacao e execucao sao simuladas.
+2. Cloud nao compartilha os links LAN do Edge (caminhos distintos, como no C#).
+3. Fila Cloud single-server FIFO (`max_concurrent_tasks=1`), simplificacao consistente com a fila unica do C#; um Cloud real teria paralelismo.
+4. Penalidades de CPU/memoria do caminho Edge do C# nao sao modeladas; a contencao emerge da fila.
+5. Tick = 1 s vs deadlines sub-segundo (ver achado dominante). Reduzir o tick exige reescalar a bandwidth dos links (MB/tick) — decisao de escopo pendente.
+
+### Status
+
+**CONCLUIDO.** Regressoes: test_cloud_executor, test_task_scheduler_with_network (10/10), test_task_network_flow, paridades MLP/WiSARD — passam. Pela primeira vez os tres niveis (preditivo, decisao, sistemico) cobrem 100% do workload.
+
+**Proximos candidatos**: (i) resolucao do tick (0.1 s com bandwidth reescalada) para que as taxas de violacao tenham leitura absoluta; (ii) comparativo sistemico de todas as politicas com Cloud executavel; (iii) multiplos seeds/workloads.
+
+## 41. Fase 22: Comparativo sistemico de destinos no workload congelado (13/10/2026)
+
+**Objetivo:** comparar politicas de nivel de *destino* (Edge vs Cloud) ponta-a-ponta no mesmo workload congelado de 20 tasks, agora com Cloud executavel (Fase 21). Experimento: `src/experimento_comparativo_destinos.py`; resultados em `results/comparativo_destinos_workload.{md,json}`.
+
+### Desenho
+
+- Todas as politicas rodam sobre o MESMO workload congelado e o MESMO motor de execucao (Edge via NetworkFlow+TaskScheduler 12 GHz; Cloud via CloudExecutor 60 GHz, WAN por-Task).
+- A selecao de servidor Edge e identica para todas (NearestServerPolicy, candidatos 2 e 5) — as politicas diferem APENAS no destino escolhido.
+- Politicas: `AlwaysEdge`, `AlwaysCloud`, `RandomDestination` (5 seeds, media±sd), `Oracle` (rotulo analitico BestDestination — limite superior do mundo fechado), `MLP_final_6`, `WISARD_FINAL_6` (treino in-session em dataset.train).
+
+### Resultados
+
+| Politica | E/C pred | Acc | Exec (E/C) | Mean compl. (s) | Viol. deadline |
+|---|---|---|---:|---:|---:|
+| AlwaysEdge | 20/0 | 0.500 | 20 (20/0) | 11.60 | 80% |
+| AlwaysCloud | 0/20 | 0.500 | 20 (0/20) | 13.75 | 100% |
+| RandomDestination | 8.4/11.6 | 0.50±0.10 | 20 (8.4/11.6) | 8.52±0.94 | 81%±5% |
+| Oracle | 10/10 | 1.000 | 20 (10/10) | 7.80 | 90% |
+| MLP | 11/9 | 0.850 | 20 (11/9) | 7.25 | 80% |
+| WiSARD | 12/8 | 0.800 | 20 (12/8) | 7.40 | 75% |
+
+### Achados
+
+1. **Politicas ML ≈ Oracle no nivel sistemico, e ligeiramente melhores neste cenario**: MLP (7.25 s / 80%) e WiSARD (7.40 s / 75%) superam o Oracle (7.80 s / 90%) em mean completion e taxa de violacao. Interpretacao honesta: o rotulo analitico e calculado por-task isoladamente; no cenario simulado, 20 tasks concorrem simultaneamente e as filas emergentes tornam o "otimo" por-task sub-otimo no agregado. Com n=20 e quantizacao de 1 s, a diferenca (~0.5 s) esta dentro do ruido — a conclusao defensavel e **equivalencia sistemica**, nao superioridade.
+2. **Accuracy != qualidade de offloading**: AlwaysCloud tem a mesma accuracy de AlwaysEdge (0.50) mas o pior resultado sistemico (13.75 s, 100% de violacao — a fila FIFO Cloud serializada sobre tick de 1 s penaliza 20 chegadas simultaneas).
+3. Balanceamento importa: politicas que dividem a carga (Oracle/MLP/WiSARD ~50/50) tem mean completion ~30-40% menor que os extremos, mesmo com accuracy similar a eles em alguns casos.
+4. Paridade interna: os numeros de MLP/WiSARD reproduzem exatamente os workloads individuais da Fase 21 — a injecao de politicas nao alterou o pipeline.
+
+### Status
+
+**CONCLUIDO.** O comparativo no nivel de destino esta fechado no workload congelado. Proximos candidatos: (i) resolucao do tick (0.1 s) para leitura absoluta das violacoes; (ii) workloads maiores/multi-seed para dispersao sistemica; (iii) escrita de metodologia/resultados do TCC.

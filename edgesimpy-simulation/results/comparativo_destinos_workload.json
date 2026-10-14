@@ -1,0 +1,735 @@
+{
+  "experiment_id": "comparativo_destinos_workload_v1",
+  "frozen_sample_ids": [
+    17,
+    433,
+    955,
+    1943,
+    3704,
+    5750,
+    5969,
+    6141,
+    6779,
+    8181,
+    8378,
+    8743,
+    11071,
+    11312,
+    11695,
+    11814,
+    12387,
+    12444,
+    13435,
+    13549
+  ],
+  "random_seeds": [
+    11,
+    22,
+    33,
+    44,
+    55
+  ],
+  "policies": [
+    {
+      "policy": "AlwaysEdge",
+      "run": "single",
+      "edge_predictions": 20,
+      "cloud_predictions": 0,
+      "accuracy": 0.5,
+      "macro_f1": 0.3333333333333333,
+      "executed_tasks": 20,
+      "executed_edge": 20,
+      "executed_cloud": 0,
+      "execution_coverage": 1.0,
+      "mean_completion_time_s": 11.6,
+      "mean_queue_time_s": 5.5,
+      "mean_transmission_time_s": 4.1,
+      "deadline_violation_rate": 0.8,
+      "edge_mean_completion_s": 11.6,
+      "cloud_mean_completion_s": null,
+      "edge_deadline_violation_rate": 0.8,
+      "cloud_deadline_violation_rate": null,
+      "systemic_metrics": {
+        "executed_tasks": 20,
+        "mean_transmission_time_s": 4.1,
+        "mean_propagation_delay_s": 0.005000000000000001,
+        "mean_queue_time_s": 5.5,
+        "mean_execution_time_s": 0.2798894235292362,
+        "mean_completion_time_s": 11.6,
+        "p95_completion_time_s": 21.05,
+        "max_completion_time_s": 22.0,
+        "deadline_violation_count": 16,
+        "deadline_violation_rate": 0.8,
+        "by_destination": {
+          "Edge": {
+            "executed_tasks": 20,
+            "mean_transmission_time_s": 4.1,
+            "mean_propagation_delay_s": 0.005000000000000001,
+            "mean_queue_time_s": 5.5,
+            "mean_execution_time_s": 0.2798894235292362,
+            "mean_completion_time_s": 11.6,
+            "p95_completion_time_s": 21.05,
+            "max_completion_time_s": 22.0,
+            "deadline_violation_count": 16,
+            "deadline_violation_rate": 0.8
+          },
+          "Cloud": {
+            "executed_tasks": 0
+          }
+        }
+      },
+      "confusion_matrix": {
+        "Edge": {
+          "Edge": 10,
+          "Cloud": 0
+        },
+        "Cloud": {
+          "Edge": 10,
+          "Cloud": 0
+        }
+      }
+    },
+    {
+      "policy": "AlwaysCloud",
+      "run": "single",
+      "edge_predictions": 0,
+      "cloud_predictions": 20,
+      "accuracy": 0.5,
+      "macro_f1": 0.3333333333333333,
+      "executed_tasks": 20,
+      "executed_edge": 0,
+      "executed_cloud": 20,
+      "execution_coverage": 1.0,
+      "mean_completion_time_s": 13.75,
+      "mean_queue_time_s": 6.4,
+      "mean_transmission_time_s": 5.6174183691726665,
+      "deadline_violation_rate": 1.0,
+      "edge_mean_completion_s": null,
+      "cloud_mean_completion_s": 13.75,
+      "edge_deadline_violation_rate": null,
+      "cloud_deadline_violation_rate": 1.0,
+      "systemic_metrics": {
+        "executed_tasks": 20,
+        "mean_transmission_time_s": 5.6174183691726665,
+        "mean_propagation_delay_s": 0.10259184149999998,
+        "mean_queue_time_s": 6.4,
+        "mean_execution_time_s": 0.05597788470584727,
+        "mean_completion_time_s": 13.75,
+        "p95_completion_time_s": 33.85000000000001,
+        "max_completion_time_s": 50.0,
+        "deadline_violation_count": 20,
+        "deadline_violation_rate": 1.0,
+        "by_destination": {
+          "Edge": {
+            "executed_tasks": 0
+          },
+          "Cloud": {
+            "executed_tasks": 20,
+            "mean_transmission_time_s": 5.6174183691726665,
+            "mean_propagation_delay_s": 0.10259184149999998,
+            "mean_queue_time_s": 6.4,
+            "mean_execution_time_s": 0.05597788470584727,
+            "mean_completion_time_s": 13.75,
+            "p95_completion_time_s": 33.85000000000001,
+            "max_completion_time_s": 50.0,
+            "deadline_violation_count": 20,
+            "deadline_violation_rate": 1.0
+          }
+        }
+      },
+      "confusion_matrix": {
+        "Edge": {
+          "Edge": 0,
+          "Cloud": 10
+        },
+        "Cloud": {
+          "Edge": 0,
+          "Cloud": 10
+        }
+      }
+    },
+    {
+      "policy": "Oracle",
+      "run": "single",
+      "edge_predictions": 10,
+      "cloud_predictions": 10,
+      "accuracy": 1.0,
+      "macro_f1": 1.0,
+      "executed_tasks": 20,
+      "executed_edge": 10,
+      "executed_cloud": 10,
+      "execution_coverage": 1.0,
+      "mean_completion_time_s": 7.8,
+      "mean_queue_time_s": 3.2,
+      "mean_transmission_time_s": 2.6526478130290982,
+      "deadline_violation_rate": 0.9,
+      "edge_mean_completion_s": 9.1,
+      "cloud_mean_completion_s": 6.5,
+      "edge_deadline_violation_rate": 1.0,
+      "cloud_deadline_violation_rate": 0.8,
+      "systemic_metrics": {
+        "executed_tasks": 20,
+        "mean_transmission_time_s": 2.6526478130290982,
+        "mean_propagation_delay_s": 0.0511581265,
+        "mean_queue_time_s": 3.2,
+        "mean_execution_time_s": 0.14129587147334632,
+        "mean_completion_time_s": 7.8,
+        "p95_completion_time_s": 19.05,
+        "max_completion_time_s": 20.0,
+        "deadline_violation_count": 18,
+        "deadline_violation_rate": 0.9,
+        "by_destination": {
+          "Edge": {
+            "executed_tasks": 10,
+            "mean_transmission_time_s": 5.2,
+            "mean_propagation_delay_s": 0.004999999999999999,
+            "mean_queue_time_s": 1.9,
+            "mean_execution_time_s": 0.21329496691874766,
+            "mean_completion_time_s": 9.1,
+            "p95_completion_time_s": null,
+            "max_completion_time_s": 20.0,
+            "deadline_violation_count": 10,
+            "deadline_violation_rate": 1.0
+          },
+          "Cloud": {
+            "executed_tasks": 10,
+            "mean_transmission_time_s": 0.10529562605819671,
+            "mean_propagation_delay_s": 0.09731625299999999,
+            "mean_queue_time_s": 4.5,
+            "mean_execution_time_s": 0.06929677602794497,
+            "mean_completion_time_s": 6.5,
+            "p95_completion_time_s": null,
+            "max_completion_time_s": 11.0,
+            "deadline_violation_count": 8,
+            "deadline_violation_rate": 0.8
+          }
+        }
+      },
+      "confusion_matrix": {
+        "Edge": {
+          "Edge": 10,
+          "Cloud": 0
+        },
+        "Cloud": {
+          "Edge": 0,
+          "Cloud": 10
+        }
+      }
+    },
+    {
+      "policy": "MLP",
+      "run": "single",
+      "edge_predictions": 11,
+      "cloud_predictions": 9,
+      "accuracy": 0.85,
+      "macro_f1": 0.849624060150376,
+      "executed_tasks": 20,
+      "executed_edge": 11,
+      "executed_cloud": 9,
+      "execution_coverage": 1.0,
+      "mean_completion_time_s": 7.25,
+      "mean_queue_time_s": 2.95,
+      "mean_transmission_time_s": 2.3325322768804555,
+      "deadline_violation_rate": 0.8,
+      "edge_mean_completion_s": 8.272727272727273,
+      "cloud_mean_completion_s": 6.0,
+      "edge_deadline_violation_rate": 0.8181818181818182,
+      "cloud_deadline_violation_rate": 0.7777777777777778,
+      "systemic_metrics": {
+        "executed_tasks": 20,
+        "mean_transmission_time_s": 2.3325322768804555,
+        "mean_propagation_delay_s": 0.045293018,
+        "mean_queue_time_s": 2.95,
+        "mean_execution_time_s": 0.16307523259304793,
+        "mean_completion_time_s": 7.25,
+        "p95_completion_time_s": 18.05,
+        "max_completion_time_s": 19.0,
+        "deadline_violation_count": 16,
+        "deadline_violation_rate": 0.8,
+        "by_destination": {
+          "Edge": {
+            "executed_tasks": 11,
+            "mean_transmission_time_s": 4.181818181818182,
+            "mean_propagation_delay_s": 0.004999999999999999,
+            "mean_queue_time_s": 2.090909090909091,
+            "mean_execution_time_s": 0.24340306338000142,
+            "mean_completion_time_s": 8.272727272727273,
+            "p95_completion_time_s": null,
+            "max_completion_time_s": 19.0,
+            "deadline_violation_count": 9,
+            "deadline_violation_rate": 0.8181818181818182
+          },
+          "Cloud": {
+            "executed_tasks": 9,
+            "mean_transmission_time_s": 0.07229394862323435,
+            "mean_propagation_delay_s": 0.09454003999999999,
+            "mean_queue_time_s": 4.0,
+            "mean_execution_time_s": 0.06489677274232701,
+            "mean_completion_time_s": 6.0,
+            "p95_completion_time_s": null,
+            "max_completion_time_s": 10.0,
+            "deadline_violation_count": 7,
+            "deadline_violation_rate": 0.7777777777777778
+          }
+        }
+      },
+      "confusion_matrix": {
+        "Edge": {
+          "Edge": 9,
+          "Cloud": 1
+        },
+        "Cloud": {
+          "Edge": 2,
+          "Cloud": 8
+        }
+      }
+    },
+    {
+      "policy": "WiSARD",
+      "run": "single",
+      "edge_predictions": 12,
+      "cloud_predictions": 8,
+      "accuracy": 0.8,
+      "macro_f1": 0.797979797979798,
+      "executed_tasks": 20,
+      "executed_edge": 12,
+      "executed_cloud": 8,
+      "execution_coverage": 1.0,
+      "mean_completion_time_s": 7.4,
+      "mean_queue_time_s": 2.4,
+      "mean_transmission_time_s": 3.067896593211594,
+      "deadline_violation_rate": 0.75,
+      "edge_mean_completion_s": 8.666666666666666,
+      "cloud_mean_completion_s": 5.5,
+      "edge_deadline_violation_rate": 0.8333333333333334,
+      "cloud_deadline_violation_rate": 0.625,
+      "systemic_metrics": {
+        "executed_tasks": 20,
+        "mean_transmission_time_s": 3.067896593211594,
+        "mean_propagation_delay_s": 0.0397228305,
+        "mean_queue_time_s": 2.4,
+        "mean_execution_time_s": 0.1461961319591638,
+        "mean_completion_time_s": 7.4,
+        "p95_completion_time_s": 19.05,
+        "max_completion_time_s": 20.0,
+        "deadline_violation_count": 15,
+        "deadline_violation_rate": 0.75,
+        "by_destination": {
+          "Edge": {
+            "executed_tasks": 12,
+            "mean_transmission_time_s": 4.666666666666667,
+            "mean_propagation_delay_s": 0.004999999999999999,
+            "mean_queue_time_s": 2.0,
+            "mean_execution_time_s": 0.1879546817777428,
+            "mean_completion_time_s": 8.666666666666666,
+            "p95_completion_time_s": null,
+            "max_completion_time_s": 20.0,
+            "deadline_violation_count": 10,
+            "deadline_violation_rate": 0.8333333333333334
+          },
+          "Cloud": {
+            "executed_tasks": 8,
+            "mean_transmission_time_s": 0.6697414830289852,
+            "mean_propagation_delay_s": 0.09180707625000001,
+            "mean_queue_time_s": 3.0,
+            "mean_execution_time_s": 0.08355830723129529,
+            "mean_completion_time_s": 5.5,
+            "p95_completion_time_s": null,
+            "max_completion_time_s": 9.0,
+            "deadline_violation_count": 5,
+            "deadline_violation_rate": 0.625
+          }
+        }
+      },
+      "confusion_matrix": {
+        "Edge": {
+          "Edge": 9,
+          "Cloud": 1
+        },
+        "Cloud": {
+          "Edge": 3,
+          "Cloud": 7
+        }
+      }
+    }
+  ],
+  "random_destination": {
+    "per_seed": [
+      {
+        "policy": "RandomDestination",
+        "run": "seed=11",
+        "edge_predictions": 7,
+        "cloud_predictions": 13,
+        "accuracy": 0.65,
+        "macro_f1": 0.6419437340153452,
+        "executed_tasks": 20,
+        "executed_edge": 7,
+        "executed_cloud": 13,
+        "execution_coverage": 1.0,
+        "mean_completion_time_s": 8.05,
+        "mean_queue_time_s": 3.9,
+        "mean_transmission_time_s": 2.296596275845436,
+        "deadline_violation_rate": 0.8,
+        "edge_mean_completion_s": 8.142857142857142,
+        "cloud_mean_completion_s": 8.0,
+        "edge_deadline_violation_rate": 0.7142857142857143,
+        "cloud_deadline_violation_rate": 0.8461538461538461,
+        "systemic_metrics": {
+          "executed_tasks": 20,
+          "mean_transmission_time_s": 2.296596275845436,
+          "mean_propagation_delay_s": 0.0644132955,
+          "mean_queue_time_s": 3.9,
+          "mean_execution_time_s": 0.15153736436421167,
+          "mean_completion_time_s": 8.05,
+          "p95_completion_time_s": 18.05,
+          "max_completion_time_s": 19.0,
+          "deadline_violation_count": 16,
+          "deadline_violation_rate": 0.8,
+          "by_destination": {
+            "Edge": {
+              "executed_tasks": 7,
+              "mean_transmission_time_s": 5.571428571428571,
+              "mean_propagation_delay_s": 0.005,
+              "mean_queue_time_s": 0.5714285714285714,
+              "mean_execution_time_s": 0.3412838559227301,
+              "mean_completion_time_s": 8.142857142857142,
+              "p95_completion_time_s": null,
+              "max_completion_time_s": 19.0,
+              "deadline_violation_count": 5,
+              "deadline_violation_rate": 0.7142857142857143
+            },
+            "Cloud": {
+              "executed_tasks": 13,
+              "mean_transmission_time_s": 0.5332250397622091,
+              "mean_propagation_delay_s": 0.09640507000000001,
+              "mean_queue_time_s": 5.6923076923076925,
+              "mean_execution_time_s": 0.04936617660193255,
+              "mean_completion_time_s": 8.0,
+              "p95_completion_time_s": null,
+              "max_completion_time_s": 14.0,
+              "deadline_violation_count": 11,
+              "deadline_violation_rate": 0.8461538461538461
+            }
+          }
+        },
+        "confusion_matrix": {
+          "Edge": {
+            "Edge": 5,
+            "Cloud": 5
+          },
+          "Cloud": {
+            "Edge": 2,
+            "Cloud": 8
+          }
+        }
+      },
+      {
+        "policy": "RandomDestination",
+        "run": "seed=22",
+        "edge_predictions": 8,
+        "cloud_predictions": 12,
+        "accuracy": 0.6,
+        "macro_f1": 0.595959595959596,
+        "executed_tasks": 20,
+        "executed_edge": 8,
+        "executed_cloud": 12,
+        "execution_coverage": 1.0,
+        "mean_completion_time_s": 10.15,
+        "mean_queue_time_s": 3.15,
+        "mean_transmission_time_s": 5.137667193672798,
+        "deadline_violation_rate": 0.8,
+        "edge_mean_completion_s": 5.5,
+        "cloud_mean_completion_s": 13.25,
+        "edge_deadline_violation_rate": 0.75,
+        "cloud_deadline_violation_rate": 0.8333333333333334,
+        "systemic_metrics": {
+          "executed_tasks": 20,
+          "mean_transmission_time_s": 5.137667193672798,
+          "mean_propagation_delay_s": 0.0745634125,
+          "mean_queue_time_s": 3.15,
+          "mean_execution_time_s": 0.14411331980554626,
+          "mean_completion_time_s": 10.15,
+          "p95_completion_time_s": 33.85000000000001,
+          "max_completion_time_s": 50.0,
+          "deadline_violation_count": 16,
+          "deadline_violation_rate": 0.8,
+          "by_destination": {
+            "Edge": {
+              "executed_tasks": 8,
+              "mean_transmission_time_s": 0.125,
+              "mean_propagation_delay_s": 0.005,
+              "mean_queue_time_s": 3.375,
+              "mean_execution_time_s": 0.27542323468655916,
+              "mean_completion_time_s": 5.5,
+              "p95_completion_time_s": null,
+              "max_completion_time_s": 9.0,
+              "deadline_violation_count": 6,
+              "deadline_violation_rate": 0.75
+            },
+            "Cloud": {
+              "executed_tasks": 12,
+              "mean_transmission_time_s": 8.479445322787996,
+              "mean_propagation_delay_s": 0.12093902083333331,
+              "mean_queue_time_s": 3.0,
+              "mean_execution_time_s": 0.05657337655153766,
+              "mean_completion_time_s": 13.25,
+              "p95_completion_time_s": null,
+              "max_completion_time_s": 50.0,
+              "deadline_violation_count": 10,
+              "deadline_violation_rate": 0.8333333333333334
+            }
+          }
+        },
+        "confusion_matrix": {
+          "Edge": {
+            "Edge": 5,
+            "Cloud": 5
+          },
+          "Cloud": {
+            "Edge": 3,
+            "Cloud": 7
+          }
+        }
+      },
+      {
+        "policy": "RandomDestination",
+        "run": "seed=33",
+        "edge_predictions": 7,
+        "cloud_predictions": 13,
+        "accuracy": 0.45,
+        "macro_f1": 0.4373401534526854,
+        "executed_tasks": 20,
+        "executed_edge": 7,
+        "executed_cloud": 13,
+        "execution_coverage": 1.0,
+        "mean_completion_time_s": 8.45,
+        "mean_queue_time_s": 3.1,
+        "mean_transmission_time_s": 3.525586957732945,
+        "deadline_violation_rate": 0.9,
+        "edge_mean_completion_s": 5.285714285714286,
+        "cloud_mean_completion_s": 10.153846153846153,
+        "edge_deadline_violation_rate": 0.7142857142857143,
+        "cloud_deadline_violation_rate": 1.0,
+        "systemic_metrics": {
+          "executed_tasks": 20,
+          "mean_transmission_time_s": 3.525586957732945,
+          "mean_propagation_delay_s": 0.06613941599999998,
+          "mean_queue_time_s": 3.1,
+          "mean_execution_time_s": 0.12036287658847285,
+          "mean_completion_time_s": 8.45,
+          "p95_completion_time_s": 22.550000000000008,
+          "max_completion_time_s": 33.0,
+          "deadline_violation_count": 18,
+          "deadline_violation_rate": 0.9,
+          "by_destination": {
+            "Edge": {
+              "executed_tasks": 7,
+              "mean_transmission_time_s": 1.7142857142857142,
+              "mean_propagation_delay_s": 0.005,
+              "mean_queue_time_s": 1.5714285714285714,
+              "mean_execution_time_s": 0.22994639958080637,
+              "mean_completion_time_s": 5.285714285714286,
+              "p95_completion_time_s": null,
+              "max_completion_time_s": 10.0,
+              "deadline_violation_count": 5,
+              "deadline_violation_rate": 0.7142857142857143
+            },
+            "Cloud": {
+              "executed_tasks": 13,
+              "mean_transmission_time_s": 4.500903011896838,
+              "mean_propagation_delay_s": 0.09906064,
+              "mean_queue_time_s": 3.923076923076923,
+              "mean_execution_time_s": 0.06135636420798556,
+              "mean_completion_time_s": 10.153846153846153,
+              "p95_completion_time_s": null,
+              "max_completion_time_s": 33.0,
+              "deadline_violation_count": 13,
+              "deadline_violation_rate": 1.0
+            }
+          }
+        },
+        "confusion_matrix": {
+          "Edge": {
+            "Edge": 3,
+            "Cloud": 7
+          },
+          "Cloud": {
+            "Edge": 4,
+            "Cloud": 6
+          }
+        }
+      },
+      {
+        "policy": "RandomDestination",
+        "run": "seed=44",
+        "edge_predictions": 12,
+        "cloud_predictions": 8,
+        "accuracy": 0.4,
+        "macro_f1": 0.3939393939393939,
+        "executed_tasks": 20,
+        "executed_edge": 12,
+        "executed_cloud": 8,
+        "execution_coverage": 1.0,
+        "mean_completion_time_s": 7.3,
+        "mean_queue_time_s": 2.85,
+        "mean_transmission_time_s": 2.5718944697564017,
+        "deadline_violation_rate": 0.75,
+        "edge_mean_completion_s": 8.5,
+        "cloud_mean_completion_s": 5.5,
+        "edge_deadline_violation_rate": 0.75,
+        "cloud_deadline_violation_rate": 0.75,
+        "systemic_metrics": {
+          "executed_tasks": 20,
+          "mean_transmission_time_s": 2.5718944697564017,
+          "mean_propagation_delay_s": 0.0464222665,
+          "mean_queue_time_s": 2.85,
+          "mean_execution_time_s": 0.17748940053742746,
+          "mean_completion_time_s": 7.3,
+          "p95_completion_time_s": 18.05,
+          "max_completion_time_s": 19.0,
+          "deadline_violation_count": 15,
+          "deadline_violation_rate": 0.75,
+          "by_destination": {
+            "Edge": {
+              "executed_tasks": 12,
+              "mean_transmission_time_s": 3.5,
+              "mean_propagation_delay_s": 0.004999999999999999,
+              "mean_queue_time_s": 3.0,
+              "mean_execution_time_s": 0.2531489913157921,
+              "mean_completion_time_s": 8.5,
+              "p95_completion_time_s": null,
+              "max_completion_time_s": 19.0,
+              "deadline_violation_count": 9,
+              "deadline_violation_rate": 0.75
+            },
+            "Cloud": {
+              "executed_tasks": 8,
+              "mean_transmission_time_s": 1.1797361743910049,
+              "mean_propagation_delay_s": 0.10855566625000002,
+              "mean_queue_time_s": 2.625,
+              "mean_execution_time_s": 0.06400001436988051,
+              "mean_completion_time_s": 5.5,
+              "p95_completion_time_s": null,
+              "max_completion_time_s": 9.0,
+              "deadline_violation_count": 6,
+              "deadline_violation_rate": 0.75
+            }
+          }
+        },
+        "confusion_matrix": {
+          "Edge": {
+            "Edge": 5,
+            "Cloud": 5
+          },
+          "Cloud": {
+            "Edge": 7,
+            "Cloud": 3
+          }
+        }
+      },
+      {
+        "policy": "RandomDestination",
+        "run": "seed=55",
+        "edge_predictions": 8,
+        "cloud_predictions": 12,
+        "accuracy": 0.4,
+        "macro_f1": 0.3939393939393939,
+        "executed_tasks": 20,
+        "executed_edge": 8,
+        "executed_cloud": 12,
+        "execution_coverage": 1.0,
+        "mean_completion_time_s": 8.65,
+        "mean_queue_time_s": 3.1,
+        "mean_transmission_time_s": 3.7185292834788313,
+        "deadline_violation_rate": 0.8,
+        "edge_mean_completion_s": 5.75,
+        "cloud_mean_completion_s": 10.583333333333334,
+        "edge_deadline_violation_rate": 0.75,
+        "cloud_deadline_violation_rate": 0.8333333333333334,
+        "systemic_metrics": {
+          "executed_tasks": 20,
+          "mean_transmission_time_s": 3.7185292834788313,
+          "mean_propagation_delay_s": 0.07014788799999999,
+          "mean_queue_time_s": 3.1,
+          "mean_execution_time_s": 0.15059815589147166,
+          "mean_completion_time_s": 8.65,
+          "p95_completion_time_s": 13.900000000000027,
+          "max_completion_time_s": 50.0,
+          "deadline_violation_count": 16,
+          "deadline_violation_rate": 0.8,
+          "by_destination": {
+            "Edge": {
+              "executed_tasks": 8,
+              "mean_transmission_time_s": 2.0,
+              "mean_propagation_delay_s": 0.005,
+              "mean_queue_time_s": 1.75,
+              "mean_execution_time_s": 0.2956883474550758,
+              "mean_completion_time_s": 5.75,
+              "p95_completion_time_s": null,
+              "max_completion_time_s": 11.0,
+              "deadline_violation_count": 6,
+              "deadline_violation_rate": 0.75
+            },
+            "Cloud": {
+              "executed_tasks": 12,
+              "mean_transmission_time_s": 4.864215472464717,
+              "mean_propagation_delay_s": 0.11357981333333335,
+              "mean_queue_time_s": 4.0,
+              "mean_execution_time_s": 0.05387136151573554,
+              "mean_completion_time_s": 10.583333333333334,
+              "p95_completion_time_s": null,
+              "max_completion_time_s": 50.0,
+              "deadline_violation_count": 10,
+              "deadline_violation_rate": 0.8333333333333334
+            }
+          }
+        },
+        "confusion_matrix": {
+          "Edge": {
+            "Edge": 3,
+            "Cloud": 7
+          },
+          "Cloud": {
+            "Edge": 5,
+            "Cloud": 5
+          }
+        }
+      }
+    ],
+    "aggregate": {
+      "policy": "RandomDestination",
+      "run": "mean over 5 seeds",
+      "n_seeds": 5,
+      "edge_predictions": 8.4,
+      "edge_predictions_sd": 1.8547236990991407,
+      "cloud_predictions": 11.6,
+      "cloud_predictions_sd": 1.8547236990991407,
+      "accuracy": 0.5,
+      "accuracy_sd": 0.10488088481701516,
+      "macro_f1": 0.492624454261283,
+      "macro_f1_sd": 0.10536435354848205,
+      "executed_tasks": 20.0,
+      "executed_tasks_sd": 0.0,
+      "executed_edge": 8.4,
+      "executed_edge_sd": 1.8547236990991407,
+      "executed_cloud": 11.6,
+      "executed_cloud_sd": 1.8547236990991407,
+      "execution_coverage": 1.0,
+      "execution_coverage_sd": 0.0,
+      "mean_completion_time_s": 8.52,
+      "mean_completion_time_s_sd": 0.9368030742904297,
+      "mean_queue_time_s": 3.22,
+      "mean_queue_time_s_sd": 0.35580893749314385,
+      "deadline_violation_rate": 0.8099999999999999,
+      "deadline_violation_rate_sd": 0.048989794855663564,
+      "edge_mean_completion_s": 6.635714285714286,
+      "edge_mean_completion_s_sd": 1.3888036255007694,
+      "cloud_mean_completion_s": 9.497435897435897,
+      "cloud_mean_completion_s_sd": 2.604365298144664,
+      "edge_deadline_violation_rate": 0.7357142857142858,
+      "edge_deadline_violation_rate_sd": 0.01749635530559412,
+      "cloud_deadline_violation_rate": 0.8525641025641025,
+      "cloud_deadline_violation_rate_sd": 0.08128649991870439
+    }
+  }
+}

@@ -69,7 +69,7 @@ def test_task_scheduler_with_network():
     task_a = Task(
         task_id="task_a",
         user=user,
-        data_size_mb=0.1,  # 102.4 KB, ~8 steps de upload
+        data_size_mb=100.0,  # 100 MB a 12.5 MB/tick (compartilhado por 2 flows) -> ~16 steps
         cpu_cycles=1000,  # 2 segundos de execução
         deadline_ms=15000,  # 15 segundos
         creation_time_s=0.0,
@@ -80,7 +80,7 @@ def test_task_scheduler_with_network():
     task_b = Task(
         task_id="task_b",
         user=user,
-        data_size_mb=0.1,  # 102.4 KB, ~8 steps de upload
+        data_size_mb=100.0,  # 100 MB a 12.5 MB/tick (compartilhado por 2 flows) -> ~16 steps
         cpu_cycles=500,   # 1 segundo de execução
         deadline_ms=15000,  # 15 segundos
         creation_time_s=0.0,

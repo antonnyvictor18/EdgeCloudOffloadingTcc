@@ -2,29 +2,33 @@
 
 ## Objective
 
-Evaluate MLP_final_6 on a representative workload containing both Edge and Cloud
+Evaluate MLP on a representative workload containing both Edge and Cloud
 cases to test the model's Edge/Cloud decision capability without altering the model.
 
 ## Methodology
 
 - Frozen workload: exact dataset sample IDs fixed before this evaluation
 - Fixed composition: 50% Edge, 50% Cloud analytical labels
-- Frozen MLP model (no retraining)
+- Frozen MLP_final_6 model artifact (no retraining)
 - Same Task object used for decision and execution (identity preserved)
 - Task deadlines taken from the dataset (DeadlineMs per sample)
-- Processing rate matches the C# analytical Edge capacity (12 GHz)
-- Edge-predicted tasks executed in EdgeSimPy
-- Cloud-predicted tasks marked CLOUD_UNAVAILABLE
+- Processing rates match the C# analytical capacities (Edge 12 GHz, Cloud 60 GHz)
+- Edge-predicted tasks executed in the EdgeSimPy topology (NetworkFlow + FIFO TaskScheduler)
+- Cloud-predicted tasks executed on a logical Cloud with the Task's own WAN conditions (option B)
+- Edge and Cloud executed in the same simulation run (same master clock)
 - NearestServerPolicy used as Edge-only control
 
 ## Configuration
 
+- **Policy**: mlp
 - **Experiment ID**: mlp_representative_workload_v1
 - **Workload Size**: 20
 - **Selection Seed**: 20261001
 - **User ID**: 1
 - **Candidate Servers**: (2, 5)
-- **Processing Rate**: 12000000000.0 cycles/s
+- **Edge Processing Rate**: 1.200e+10 cycles/s
+- **Cloud Processing Rate**: 6.000e+10 cycles/s
+- **Cloud Execution**: enabled (logical Cloud, per-Task WAN)
 
 ## Workload Composition
 
@@ -54,10 +58,9 @@ cases to test the model's Edge/Cloud decision capability without altering the mo
 
 - **Prediction Edge Rate**: 55.0%
 - **Prediction Cloud Rate**: 45.0%
-- **Execution Coverage**: 55.0%
+- **Execution Coverage**: 100.0%
 
-Note: Execution coverage is not directly comparable to Edge-only policies
-when Cloud infrastructure is unavailable.
+Note: with Cloud execution enabled, coverage counts both Edge- and Cloud-executed tasks.
 
 ## Task-Level Results
 
@@ -65,61 +68,98 @@ when Cloud infrastructure is unavailable.
 
 | Task | Sample ID | Label | Prediction | Status | Server |
 |------|-----------|-------|------------|--------|--------|
-| task_00 | 17 | Cloud | Cloud | CLOUD_UNAVAILABLE | N/A |
+| task_00 | 17 | Cloud | Cloud | EXECUTED_CLOUD | N/A |
 | task_01 | 433 | Edge | Edge | EXECUTED | 5 |
-| task_02 | 955 | Cloud | Cloud | CLOUD_UNAVAILABLE | N/A |
+| task_02 | 955 | Cloud | Cloud | EXECUTED_CLOUD | N/A |
 | task_03 | 1943 | Edge | Edge | EXECUTED | 5 |
 | task_04 | 3704 | Edge | Edge | EXECUTED | 5 |
-| task_05 | 5750 | Cloud | Cloud | CLOUD_UNAVAILABLE | N/A |
-| task_06 | 5969 | Cloud | Cloud | CLOUD_UNAVAILABLE | N/A |
+| task_05 | 5750 | Cloud | Cloud | EXECUTED_CLOUD | N/A |
+| task_06 | 5969 | Cloud | Cloud | EXECUTED_CLOUD | N/A |
 | task_07 | 6141 | Edge | Edge | EXECUTED | 5 |
 | task_08 | 6779 | Cloud | Edge | EXECUTED | 5 |
-| task_09 | 8181 | Cloud | Cloud | CLOUD_UNAVAILABLE | N/A |
+| task_09 | 8181 | Cloud | Cloud | EXECUTED_CLOUD | N/A |
 | task_10 | 8378 | Edge | Edge | EXECUTED | 5 |
 | task_11 | 8743 | Edge | Edge | EXECUTED | 5 |
 | task_12 | 11071 | Edge | Edge | EXECUTED | 5 |
-| task_13 | 11312 | Cloud | Cloud | CLOUD_UNAVAILABLE | N/A |
-| task_14 | 11695 | Edge | Cloud | CLOUD_UNAVAILABLE | N/A |
+| task_13 | 11312 | Cloud | Cloud | EXECUTED_CLOUD | N/A |
+| task_14 | 11695 | Edge | Cloud | EXECUTED_CLOUD | N/A |
 | task_15 | 11814 | Edge | Edge | EXECUTED | 5 |
 | task_16 | 12387 | Cloud | Edge | EXECUTED | 5 |
 | task_17 | 12444 | Edge | Edge | EXECUTED | 5 |
-| task_18 | 13435 | Cloud | Cloud | CLOUD_UNAVAILABLE | N/A |
-| task_19 | 13549 | Cloud | Cloud | CLOUD_UNAVAILABLE | N/A |
+| task_18 | 13435 | Cloud | Cloud | EXECUTED_CLOUD | N/A |
+| task_19 | 13549 | Cloud | Cloud | EXECUTED_CLOUD | N/A |
 
-### Table B: Execution Metrics (Edge Tasks Only)
+### Table B: Execution Metrics (Edge and Cloud executed tasks; seconds)
 
-| Task | Server | Transmission | Propagation | Queue | Execution | Completion | Deadline Violation |
-|------|--------|--------------|-------------|-------|-----------|------------|-------------------|
-| task_01 | 5 | 5016.00 | 0.010 | 0.00 | 0.13 | 5018.00 | Yes |
-| task_03 | 5 | 17754.00 | 0.010 | 0.00 | 0.15 | 17756.00 | Yes |
-| task_04 | 5 | 1154.00 | 0.010 | 0.00 | 0.02 | 1156.00 | Yes |
-| task_07 | 5 | 1567.00 | 0.010 | 0.00 | 0.26 | 1569.00 | Yes |
-| task_08 | 5 | 507.00 | 0.010 | 0.00 | 0.53 | 509.00 | Yes |
-| task_10 | 5 | 2665.00 | 0.010 | 0.00 | 0.20 | 2667.00 | Yes |
-| task_11 | 5 | 1390.00 | 0.010 | 0.00 | 0.51 | 1392.00 | Yes |
-| task_12 | 5 | 17327.00 | 0.010 | 0.00 | 0.23 | 17329.00 | Yes |
-| task_15 | 5 | 3427.00 | 0.010 | 0.00 | 0.12 | 3429.00 | Yes |
-| task_16 | 5 | 611.00 | 0.010 | 0.00 | 0.17 | 613.00 | Yes |
-| task_17 | 5 | 1418.00 | 0.010 | 0.00 | 0.37 | 1420.00 | Yes |
+| Task | Destination | Transmission | Propagation | Queue | Execution | Completion | Deadline (ms) | Violation |
+|------|-------------|--------------|-------------|-------|-----------|------------|--------------:|-----------|
+| task_00 | Cloud (WAN) | 0.12 | 0.085 | 0.00 | 0.111 | 2.00 | 537 | Yes |
+| task_01 | Edge 5 | 4.00 | 0.005 | 4.00 | 0.125 | 10.00 | 226 | Yes |
+| task_02 | Cloud (WAN) | 0.02 | 0.062 | 1.00 | 0.057 | 3.00 | 3394 | No |
+| task_03 | Edge 5 | 17.00 | 0.005 | 0.00 | 0.152 | 19.00 | 1376 | Yes |
+| task_04 | Edge 5 | 1.00 | 0.005 | 1.00 | 0.024 | 4.00 | 1686 | Yes |
+| task_05 | Cloud (WAN) | 0.01 | 0.057 | 2.00 | 0.017 | 4.00 | 5532 | No |
+| task_06 | Cloud (WAN) | 0.00 | 0.114 | 3.00 | 0.124 | 5.00 | 4941 | Yes |
+| task_07 | Edge 5 | 1.00 | 0.005 | 2.00 | 0.256 | 5.00 | 1360 | Yes |
+| task_08 | Edge 5 | 0.00 | 0.005 | 0.00 | 0.528 | 2.00 | 5902 | No |
+| task_09 | Cloud (WAN) | 0.13 | 0.063 | 4.00 | 0.111 | 6.00 | 5498 | Yes |
+| task_10 | Edge 5 | 2.00 | 0.005 | 4.00 | 0.197 | 8.00 | 2555 | Yes |
+| task_11 | Edge 5 | 1.00 | 0.005 | 3.00 | 0.507 | 6.00 | 3968 | Yes |
+| task_12 | Edge 5 | 16.00 | 0.005 | 0.00 | 0.231 | 18.00 | 1788 | Yes |
+| task_13 | Cloud (WAN) | 0.08 | 0.033 | 5.00 | 0.024 | 7.00 | 323 | Yes |
+| task_14 | Cloud (WAN) | 0.09 | 0.134 | 6.00 | 0.030 | 8.00 | 4165 | Yes |
+| task_15 | Edge 5 | 3.00 | 0.005 | 4.00 | 0.125 | 9.00 | 1994 | Yes |
+| task_16 | Edge 5 | 0.00 | 0.005 | 1.00 | 0.166 | 3.00 | 3244 | No |
+| task_17 | Edge 5 | 1.00 | 0.005 | 4.00 | 0.366 | 7.00 | 4270 | Yes |
+| task_18 | Cloud (WAN) | 0.05 | 0.163 | 7.00 | 0.075 | 9.00 | 4729 | Yes |
+| task_19 | Cloud (WAN) | 0.14 | 0.140 | 8.00 | 0.035 | 10.00 | 3784 | Yes |
 
-## Systemic Metrics (Edge-Executed Tasks)
+## Systemic Metrics
+
+### All executed tasks
+
+- **Executed Tasks**: 20
+- **Mean Transmission Time**: 2.33 s
+- **Mean Propagation Delay**: 0.045 s
+- **Mean Queue Time**: 2.95 s
+- **Mean Execution Time**: 0.163 s
+- **Mean Completion Time**: 7.25 s
+- **P95 Completion Time**: 18.05 s
+- **Max Completion Time**: 19.00 s
+- **Deadline Violations**: 16
+- **Deadline Violation Rate**: 80.0%
+
+### Edge-executed tasks (EdgeSimPy topology, 12 GHz)
 
 - **Executed Tasks**: 11
-- **Mean Transmission Time**: 4803.27 s
-- **Mean Propagation Delay**: 0.010 s
-- **Mean Queue Time**: 0.00 s
-- **Mean Execution Time**: 0.24 s
-- **Mean Completion Time**: 4805.27 s
-- **P95 Completion Time**: None
-- **Max Completion Time**: 17756.00 s
-- **Deadline Violations**: 11
-- **Deadline Violation Rate**: 100.0%
+- **Mean Transmission Time**: 4.18 s
+- **Mean Propagation Delay**: 0.005 s
+- **Mean Queue Time**: 2.09 s
+- **Mean Execution Time**: 0.243 s
+- **Mean Completion Time**: 8.27 s
+- **P95 Completion Time**: N/A (n < 20)
+- **Max Completion Time**: 19.00 s
+- **Deadline Violations**: 9
+- **Deadline Violation Rate**: 81.8%
+
+### Cloud-executed tasks (logical Cloud, per-Task WAN, 60 GHz)
+
+- **Executed Tasks**: 9
+- **Mean Transmission Time**: 0.07 s
+- **Mean Propagation Delay**: 0.095 s
+- **Mean Queue Time**: 4.00 s
+- **Mean Execution Time**: 0.065 s
+- **Mean Completion Time**: 6.00 s
+- **P95 Completion Time**: N/A (n < 20)
+- **Max Completion Time**: 10.00 s
+- **Deadline Violations**: 7
+- **Deadline Violation Rate**: 77.8%
 
 ## NearestServerPolicy Control
 
 - **Tasks Processed**: 20
 - **Edge Selections**: 20 (always Edge)
-- **Server Distribution**: {2: 20}
+- **Server Distribution**: {5: 20}
 
 ## Analysis
 
@@ -135,33 +175,36 @@ when Cloud infrastructure is unavailable.
 - Edge → Cloud errors: 1 (Cloud predicted for Edge tasks)
 - Cloud → Edge errors: 2 (Edge predicted for Cloud tasks)
 
-### CLOUD_UNAVAILABLE Effect
-- Tasks marked CLOUD_UNAVAILABLE: 9
-- These tasks cannot be executed without Cloud infrastructure
-
-### Edge Execution
-- Tasks executed in EdgeSimPy: 11
-- Server selection delegated to NearestServerPolicy
+### Execution
+- Edge-executed in EdgeSimPy topology: 11 (server selection by NearestServerPolicy)
+- Cloud-executed on logical Cloud: 9
+- CLOUD_UNAVAILABLE: 0
+- Failed: 0
 
 ## Limitations
 
-1. **Cloud Infrastructure**: Cloud is not implemented in EdgeSimPy, so Cloud-predicted
-   tasks cannot be executed and are marked CLOUD_UNAVAILABLE.
-2. **Execution Coverage**: The execution coverage metric is diagnostic only - it shows
-   how much workload can be processed with current infrastructure, not policy quality.
-3. **Network Feature Semantics**: Runtime BandwidthMbps/NetworkLatencyMs are derived
-   from the EdgeSimPy topology (bottleneck bandwidth and average path delay across all
-   EdgeServers). In the C# dataset these columns are per-task sampled WAN parameters used
-   only on the Cloud path. They are NOT the same random variables - this is a documented
-   contract mismatch, not a unit-conversion issue.
-4. **Frozen Workload**: Sample IDs span the full dataset (not a single split). This is
+1. **Logical Cloud (design option B)**: there is no Cloud node in the EdgeSimPy topology.
+   Cloud WAN cost is computed from the Task's own scenario attributes
+   (upload = TaskSizeMB*8/BandwidthMbps, propagation = NetworkLatencyMs) - the same
+   attributes the policy decided on. This network term is analytical and shares its
+   formula family with the label generator (partial circularity, declared). Queueing,
+   arrival order, tick quantization and execution on the Cloud are simulated.
+2. **Separate paths**: Cloud traffic does not share the Edge LAN links (consistent with
+   the C# model, where the Edge path has no network term and the Cloud path has only WAN).
+3. **Network Feature Semantics**: BandwidthMbps/NetworkLatencyMs are per-scenario WAN
+   conditions carried on the Task. The topology-derived computation remains only as a
+   documented fallback for Tasks without explicit WAN attributes.
+4. **Units**: EdgeSimPy-native convention - data in MB, link bandwidth in MB/tick
+   (tutorial link 12.5 MB/s = 100 Mbps), tick = 1 s. Sub-tick transfers register as 0 s.
+5. **Frozen Workload**: Sample IDs span the full dataset (not a single split). This is
    the frozen contract from the original experiment and must not be re-selected.
-5. **Processing Rate**: Edge execution uses 12 GHz to match the C# analytical
-   EdgeCapacityCyclesPerMs = 12,000,000 cycles/ms.
+6. **Capacities**: Edge 12 GHz and Cloud 60 GHz match the C# analytical
+   EdgeCapacityCyclesPerMs / CloudCapacityCyclesPerMs. Edge-path CPU/memory penalties of
+   the C# formula are not modeled; Edge contention emerges from the FIFO queue instead.
 
 ## Next Steps
 
-1. Implement Cloud infrastructure in EdgeSimPy to execute Cloud-predicted tasks
-2. Evaluate on full test set for final model assessment
-3. Compare MLP performance against Edge-only policies with Cloud implementation
-4. Analyze system-level impact of Edge/Cloud decisions on latency and resource utilization
+1. Compare policies (Random, Nearest, LeastLoaded, Hybrid, MLP, WiSARD) at the systemic level
+   with both destinations executable
+2. Analyze deadline violations by destination and by task size / WAN condition
+3. Stress scenarios (more concurrent tasks, worse WAN) and multiple seeds

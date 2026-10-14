@@ -68,8 +68,14 @@ class TaskNetworkFlow:
         except nx.NetworkXNoPath:
             raise ValueError(f"No network path between {source_switch} and {target_switch}")
 
-        # Convert data size (MB to KB - operational hypothesis for EdgeSimPy)
-        data_to_transfer = self.task.data_size_mb * 1024
+        # EdgeSimPy-native unit convention: data_to_transfer is in megabytes
+        # (ContainerLayer.size is documented in MB and NetworkFlow.step does
+        # data_to_transfer -= min(link bandwidth) once per tick), so link
+        # bandwidth is MB per tick. With tick_duration=1s the tutorial link
+        # bandwidth 12.5 means 12.5 MB/s = 100 Mbps. The previous "* 1024"
+        # (MB->KB) inflated transmission times 1024x and was not comparable
+        # with the C# WAN contract (TaskSizeMB * 8 / BandwidthMbps).
+        data_to_transfer = self.task.data_size_mb
 
         # Create NetworkFlow following EdgeSimPy pattern
         # source=NetworkSwitch (entry point), target=EdgeServer (logical destination)

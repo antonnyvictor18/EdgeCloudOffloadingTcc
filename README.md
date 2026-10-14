@@ -135,8 +135,22 @@ cd edgesimpy-simulation
 - **Paridade fechada no test inteiro:** 0 divergências `policy(Task)` vs `model(X_raw)` para ambos
 - Script `src/experimento_avaliacao_test_set.py`; relatórios `results/final_test_evaluation.{md,json}`. **O test set agora está usado** — nova seleção de modelo exigiria novo split
 
+### ✅ Fase 20 - Unidades de rede coerentes (13/10/2026)
+- Convenção **nativa do EdgeSimPy**: `data_to_transfer` em MB (`ContainerLayer.size` é em MB), `link.bandwidth` em MB/tick → link do tutorial 12.5 = 100 Mbps com tick = 1 s. Removido o `×1024` que inflava transmissões 1024× (completion ~4800 s → ~8 s; fila passa a ser observável)
+
+### ✅ Fase 21 - Cloud lógico com WAN por-Task, opção B (13/10/2026)
+- **Decisão conjunta** entre 4 alternativas; B preserva a coerência decisão/execução (mesmos atributos da Task) e declara a circularidade parcial do termo de rede
+- **`CloudExecutor`** (`src/integration/cloud_executor.py`): destino lógico fora do grafo; upload = `MB×8/task.bandwidth_mbps`, propagação = `task.network_latency_ms`; chegada quantizada ao tick; FIFO + 60 GHz (`CloudCapacityCyclesPerMs`) via `TaskScheduler`; sem WAN → erro (sem fallback). Testes em `src/test_cloud_executor.py`
+- **Workload congelado 100% executável** (Edge e Cloud no mesmo relógio): MLP 20/20 (11 E + 9 C), WiSARD 20/20 (12 E + 8 C). Cloud: upload médio 0,07 s vs Edge 4–5 s (100 Mbps compartilhados)
+- **Achado dominante:** tick de 1 s vs execuções de 0,02–0,5 s e deadlines de 0,3–5,9 s — cada task em fila custa ≥ 1 s; a maioria das violações (75–80%) é artefato da resolução temporal, igual para ambos os destinos. Reduzir o tick exige reescalar bandwidth dos links (pendente)
+
+### ✅ Fase 22 - Comparativo de destinos no workload congelado (13/10/2026)
+- `src/experimento_comparativo_destinos.py`: 6 políticas de destino (AlwaysEdge, AlwaysCloud, RandomDestination ×5 seeds, Oracle, MLP, WiSARD) no mesmo workload congelado, seleção de servidor Edge idêntica — só o destino Edge/Cloud difere. Resultados: `results/comparativo_destinos_workload.{md,json}`
+- **MLP (7,25 s / 80% viol.) e WiSARD (7,40 s / 75%) ≈ Oracle (7,80 s / 90%)** no nível sistêmico; baselines piores: AlwaysEdge 11,60 s, AlwaysCloud 13,75 s (fila Cloud serializada), Random 8,52 s. Leitura honesta: equivalência sistêmica com o oráculo analítico, não superioridade (n=20, tick de 1 s)
+
 ### ⏳ Fases futuras
-- Representação de Cloud (executar predições Cloud, hoje `CLOUD_UNAVAILABLE`)
+- Resolução do tick (0,1 s com bandwidth reescalada) para leitura absoluta das violações de deadline
+- Workloads maiores e multi-seed para dispersão sistêmica
 - Mobilidade e experimentos de estresse
 
 ## Documentação técnica
@@ -173,10 +187,9 @@ cd edgesimpy-simulation
 
 ## Próximos passos recomendados
 
-1. Adicionar representação de Cloud para executar predições Cloud (hoje `CLOUD_UNAVAILABLE`)
-2. Avaliar o modelo no conjunto de teste intocado após a auditoria de paridade
-3. Experimentos comparativos completos com métricas sistêmicas
-4. Escrever metodologia e resultados finais do TCC
+1. Resolução temporal: tick de 0,1 s com bandwidth dos links reescalada (MB/tick), para que as taxas de violação de deadline tenham leitura absoluta
+2. Workloads maiores e multi-seed para dispersão sistêmica (o comparativo de destinos atual usa o workload congelado de 20 tasks)
+3. Escrever metodologia e resultados finais do TCC
 
 ## Ambiente de desenvolvimento
 

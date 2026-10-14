@@ -50,12 +50,12 @@ def test_task_network_flow():
     print(f"Target BaseStation: {target_server.base_station.id if target_server.base_station else None}")
     print(f"Target NetworkSwitch: {target_server.base_station.network_switch.id if target_server.base_station and target_server.base_station.network_switch else None}")
 
-    # Criar Task com tamanho pequeno para teste rápido
-    # 0.1 MB = 102.4 KB, com bandwidth 12.5 KB/tick -> ~8-9 steps
+    # Unidade nativa do EdgeSimPy: data_to_transfer em MB, link bandwidth em
+    # MB/tick (12.5 MB/s = 100 Mbps). 100 MB / 12.5 -> 8 steps.
     task = Task(
         task_id=1,
         user=user,
-        data_size_mb=0.1,  # Tamanho pequeno para teste
+        data_size_mb=100.0,
         cpu_cycles=1000.0,
         deadline_ms=1000.0,
         creation_time_s=0.0,
@@ -123,8 +123,8 @@ def test_task_network_flow():
     print(f"Source switch: {flow.source.id if flow.source else None}")
     print(f"Target switch: {target_server.base_station.network_switch.id if target_server.base_station and target_server.base_station.network_switch else None}")
     print(f"Path: {[switch.id for switch in flow.path]}")
-    print(f"Data to transfer: {flow.data_to_transfer} KB (operational hypothesis)")
-    print(f"Bandwidth efetiva: {list(flow.bandwidth.values())} KB/tick")
+    print(f"Data to transfer: {flow.data_to_transfer} MB (EdgeSimPy-native unit)")
+    print(f"Bandwidth efetiva: {list(flow.bandwidth.values())} MB/tick")
     print(f"Flow start: {flow.start}")
     print(f"Flow end: {flow.end}")
     if flow.end is not None:

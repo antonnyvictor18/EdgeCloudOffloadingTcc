@@ -35,7 +35,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "edgesimpy-source"))
 
 from edge_sim_py import EdgeServer, Simulator, User
-from integration import TaskSchedulerIntegration
+from integration import CLOUD_PROCESSING_RATE_CYCLES_PER_SECOND, CloudExecutor, TaskSchedulerIntegration
 from models import Task, TaskStatus
 from execution.task_scheduler import TaskScheduler
 from ml.dataset import FEATURE_NAMES, load_offloading_dataset
@@ -47,6 +47,9 @@ from policies.ml_offloading import (
     create_mlp_offloading_policy,
     create_wisard_offloading_policy,
 )
+
+
+EXECUTED_STATUSES = ("EXECUTED", "EXECUTED_CLOUD")
 
 
 @dataclass(frozen=True)
@@ -69,6 +72,10 @@ class RepresentativeWorkloadConfig:
     task_latency_sensitivity: float = 0.5
     # 12 GHz, matching the C# analytical model (EdgeCapacityCyclesPerMs = 12_000_000)
     processing_rate_cycles_per_second: float = 12_000_000_000.0
+    # Logical Cloud (design option B): 60 GHz (CloudCapacityCyclesPerMs = 60_000_000),
+    # WAN cost from the Task's own bandwidth_mbps / network_latency_ms
+    execute_cloud: bool = True
+    cloud_processing_rate_cycles_per_second: float = CLOUD_PROCESSING_RATE_CYCLES_PER_SECOND
     max_simulation_steps: int = 100_000
 
     # Frozen workload: exact dataset sample IDs (CSV row indices) selected in
@@ -168,8 +175,8 @@ class RepresentativeWorkloadEvaluator:
         # Step 3: Evaluate model predictions on workload
         self._evaluate_predictions(policy)
 
-        # Step 4: Execute Edge-predicted tasks in EdgeSimPy
-        self._execute_edge_tasks()
+        # Step 4: Execute Edge- and Cloud-predicted tasks in EdgeSimPy (same clock)
+        self._execute_tasks()
 
         # Step 5: Calculate metrics
         self._calculate_metrics()
@@ -343,14 +350,23 @@ class RepresentativeWorkloadEvaluator:
         print(f"  Edge predictions: {edge_predictions}")
         print(f"  Cloud predictions: {cloud_predictions}")
 
-    def _execute_edge_tasks(self) -> None:
-        """Execute Edge-predicted tasks in EdgeSimPy."""
-        if not self.edge_tasks:
-            print("\nNo Edge tasks to execute")
+    def _execute_tasks(self) -> None:
+        """Execute Edge- and Cloud-predicted tasks in the SAME EdgeSimPy run.
+
+        Edge tasks: NetworkFlow over the EdgeSimPy topology + TaskScheduler on
+        the selected EdgeServer (12 GHz). Cloud tasks: logical CloudExecutor
+        with the Task's own WAN conditions + FIFO queue at 60 GHz (design
+        option B). Both are driven by the same master clock so the systemic
+        metrics are comparable within one scenario. If Cloud execution is
+        disabled, Cloud predictions stay CLOUD_UNAVAILABLE (no fallback).
+        """
+        if not self.edge_tasks and not (self.cloud_tasks and self.config.execute_cloud):
+            print("\nNo tasks to execute")
             return
 
         print("\n" + "="*60)
-        print(f"Step 4: Executing {len(self.edge_tasks)} Edge Tasks")
+        print(f"Step 4: Executing {len(self.edge_tasks)} Edge Tasks"
+              + (f" + {len(self.cloud_tasks)} Cloud Tasks" if self.config.execute_cloud else ""))
         print("="*60)
 
         # Use the same simulator that was initialized in _evaluate_predictions
@@ -367,10 +383,16 @@ class RepresentativeWorkloadEvaluator:
             task_scheduler=task_scheduler,
             simulator=execution_simulator
         )
+        cloud_executor = CloudExecutor(
+            simulator=execution_simulator,
+            processing_rate_cycles_per_second=self.config.cloud_processing_rate_cycles_per_second,
+        )
+        self.cloud_executor = cloud_executor
 
         # Tasks submitted for execution (the SAME Task objects used for the
         # MLP decision - no recreation, preserving task identity)
         submitted_tasks = []
+        submitted_cloud_tasks = []
         # Snapshot of the properties that must remain identical between
         # decision and execution (task identity contract)
         decision_snapshots = {}
@@ -378,11 +400,13 @@ class RepresentativeWorkloadEvaluator:
         # Define resource management algorithm
         def resource_management_algorithm(parameters):
             scheduler_integration.step()
+            cloud_executor.step()
 
         # Define stopping criterion
         def stopping_criterion(model):
             max_steps = self.config.max_simulation_steps
-            return (all(t[0].status == TaskStatus.COMPLETED for t in submitted_tasks)
+            all_tasks = [t[0] for t in submitted_tasks] + [t[0] for t in submitted_cloud_tasks]
+            return (all(t.status == TaskStatus.COMPLETED for t in all_tasks)
                     or execution_simulator.schedule.steps >= max_steps)
 
         # Set the algorithms on the existing simulator
@@ -427,8 +451,30 @@ class RepresentativeWorkloadEvaluator:
                 print(f"Server selection failed for {task.task_id}: {e}")
                 task_info["execution_status"] = "SERVER_SELECTION_FAILED"
 
+        # Submit Cloud-predicted tasks to the logical Cloud (same Task objects)
+        if self.config.execute_cloud:
+            for task_info in self.cloud_tasks:
+                task = task_info["task"]
+                decision_snapshots[task.task_id] = {
+                    "cpu_cycles": task.cpu_cycles,
+                    "data_size_mb": task.data_size_mb,
+                    "deadline_ms": task.deadline_ms,
+                    "latency_sensitivity": task.latency_sensitivity,
+                    "required_memory_mb": task.required_memory_mb,
+                    "bandwidth_mbps": task.bandwidth_mbps,
+                    "network_latency_ms": task.network_latency_ms,
+                }
+                try:
+                    cloud_executor.submit_task(task)
+                    submitted_cloud_tasks.append((task, task_info))
+                    print(f"Task {task.task_id}: Cloud (WAN {task.bandwidth_mbps:.1f} Mbps, "
+                          f"{task.network_latency_ms:.1f} ms)")
+                except ValueError as e:
+                    print(f"Cloud submission failed for {task.task_id}: {e}")
+                    task_info["execution_status"] = "CLOUD_SUBMISSION_FAILED"
+
         # Run simulation
-        if submitted_tasks:
+        if submitted_tasks or submitted_cloud_tasks:
             print("Running EdgeSimPy simulation...")
             # Manual loop equivalent to Simulator.run_model(), but skipping
             # monitor()/dump_data_to_disk() per-step overhead. step() invokes
@@ -439,12 +485,24 @@ class RepresentativeWorkloadEvaluator:
             print(f"Simulation completed in {execution_simulator.schedule.steps} steps")
 
             # Collect results and verify task identity was preserved
+            for task, task_info in submitted_cloud_tasks:
+                task_info["execution_status"] = (
+                    "EXECUTED_CLOUD" if task.status == TaskStatus.COMPLETED else "CLOUD_EXECUTION_FAILED"
+                )
+                tr = cloud_executor.transfer_info(task)
+                task_info["network_metrics"] = {
+                    "path": ("WAN",),
+                    "hops": None,
+                    "path_delay_ms": task.network_latency_ms,
+                    "propagation_delay_s": tr.propagation_time_s,
+                }
             for task, task_info, selected_server in submitted_tasks:
                 if task.status == TaskStatus.COMPLETED:
                     task_info["execution_status"] = "EXECUTED"
                 else:
                     task_info["execution_status"] = "EXECUTION_FAILED"
 
+            for task, *_ in submitted_tasks + submitted_cloud_tasks:
                 # Explicit identity check: the executed task must still carry
                 # the exact same properties used at decision time
                 snapshot = decision_snapshots[task.task_id]
@@ -513,7 +571,7 @@ class RepresentativeWorkloadEvaluator:
                 result.propagation_delay_s = metrics["propagation_delay_s"]
 
             # Add execution metrics if available
-            if task_info["execution_status"] == "EXECUTED":
+            if task_info["execution_status"] in EXECUTED_STATUSES:
                 result.transmission_time_s = task.transmission_time_s
                 result.queue_time_s = task.queue_time_s
                 result.execution_time_s = task.execution_time_s
@@ -533,7 +591,7 @@ class RepresentativeWorkloadEvaluator:
         total_tasks = len(self.results.task_results)
         edge_predictions = sum(1 for r in self.results.task_results if r.prediction == "Edge")
         cloud_predictions = sum(1 for r in self.results.task_results if r.prediction == "Cloud")
-        executed_tasks = sum(1 for r in self.results.task_results if r.execution_status == "EXECUTED")
+        executed_tasks = sum(1 for r in self.results.task_results if r.execution_status in EXECUTED_STATUSES)
 
         self.results.prediction_edge_rate = edge_predictions / total_tasks if total_tasks > 0 else 0
         self.results.prediction_cloud_rate = cloud_predictions / total_tasks if total_tasks > 0 else 0
@@ -593,31 +651,34 @@ class RepresentativeWorkloadEvaluator:
         self.results.accuracy = correct / total if total > 0 else 0
 
     def _calculate_systemic_metrics(self) -> None:
-        """Calculate systemic metrics for executed tasks."""
-        executed_results = [r for r in self.results.task_results if r.execution_status == "EXECUTED"]
+        """Calculate systemic metrics for executed tasks (overall, Edge, Cloud)."""
+        executed = [r for r in self.results.task_results if r.execution_status in EXECUTED_STATUSES]
+        self.results.systemic_metrics = self._aggregate_systemic(executed)
+        self.results.systemic_metrics["by_destination"] = {
+            "Edge": self._aggregate_systemic([r for r in executed if r.execution_status == "EXECUTED"]),
+            "Cloud": self._aggregate_systemic([r for r in executed if r.execution_status == "EXECUTED_CLOUD"]),
+        }
 
+    @staticmethod
+    def _aggregate_systemic(executed_results: List[TaskEvaluationResult]) -> Dict[str, Any]:
         if not executed_results:
-            self.results.systemic_metrics = {"executed_tasks": 0}
-            return
+            return {"executed_tasks": 0}
 
-        # Extract metrics
-        transmission_times = [r.transmission_time_s for r in executed_results if r.transmission_time_s is not None]
-        propagation_delays = [r.propagation_delay_s for r in executed_results if r.propagation_delay_s is not None]
-        queue_times = [r.queue_time_s for r in executed_results if r.queue_time_s is not None]
-        execution_times = [r.execution_time_s for r in executed_results if r.execution_time_s is not None]
-        completion_times = [r.completion_time_s for r in executed_results if r.completion_time_s is not None]
-        deadline_violations = [r.deadline_violation for r in executed_results if r.deadline_violation is not None]
+        def vals(attr: str) -> List[float]:
+            return [getattr(r, attr) for r in executed_results if getattr(r, attr) is not None]
 
-        self.results.systemic_metrics = {
+        completion_times = vals("completion_time_s")
+        deadline_violations = vals("deadline_violation")
+        return {
             "executed_tasks": len(executed_results),
-            "mean_transmission_time_s": np.mean(transmission_times) if transmission_times else None,
-            "mean_propagation_delay_s": np.mean(propagation_delays) if propagation_delays else None,
-            "mean_queue_time_s": np.mean(queue_times) if queue_times else None,
-            "mean_execution_time_s": np.mean(execution_times) if execution_times else None,
-            "mean_completion_time_s": np.mean(completion_times) if completion_times else None,
-            "p95_completion_time_s": np.percentile(completion_times, 95) if len(completion_times) >= 20 else None,
+            "mean_transmission_time_s": float(np.mean(vals("transmission_time_s"))) if vals("transmission_time_s") else None,
+            "mean_propagation_delay_s": float(np.mean(vals("propagation_delay_s"))) if vals("propagation_delay_s") else None,
+            "mean_queue_time_s": float(np.mean(vals("queue_time_s"))) if vals("queue_time_s") else None,
+            "mean_execution_time_s": float(np.mean(vals("execution_time_s"))) if vals("execution_time_s") else None,
+            "mean_completion_time_s": float(np.mean(completion_times)) if completion_times else None,
+            "p95_completion_time_s": float(np.percentile(completion_times, 95)) if len(completion_times) >= 20 else None,
             "max_completion_time_s": max(completion_times) if completion_times else None,
-            "deadline_violation_count": sum(deadline_violations),
+            "deadline_violation_count": int(sum(deadline_violations)),
             "deadline_violation_rate": sum(deadline_violations) / len(deadline_violations) if deadline_violations else None,
         }
 
@@ -703,9 +764,11 @@ class RepresentativeWorkloadEvaluator:
             f"- {model_description}",
             "- Same Task object used for decision and execution (identity preserved)",
             "- Task deadlines taken from the dataset (DeadlineMs per sample)",
-            "- Processing rate matches the C# analytical Edge capacity (12 GHz)",
-            "- Edge-predicted tasks executed in EdgeSimPy",
-            "- Cloud-predicted tasks marked CLOUD_UNAVAILABLE",
+            "- Processing rates match the C# analytical capacities (Edge 12 GHz, Cloud 60 GHz)",
+            "- Edge-predicted tasks executed in the EdgeSimPy topology (NetworkFlow + FIFO TaskScheduler)",
+            ("- Cloud-predicted tasks executed on a logical Cloud with the Task's own WAN conditions (option B)"
+             if self.results.config.execute_cloud else "- Cloud-predicted tasks marked CLOUD_UNAVAILABLE"),
+            "- Edge and Cloud executed in the same simulation run (same master clock)",
             "- NearestServerPolicy used as Edge-only control",
             "",
             "## Configuration",
@@ -716,7 +779,9 @@ class RepresentativeWorkloadEvaluator:
             f"- **Selection Seed**: {self.results.config.selection_seed}",
             f"- **User ID**: {self.results.config.user_id}",
             f"- **Candidate Servers**: {self.results.config.candidate_server_ids}",
-            f"- **Processing Rate**: {self.results.config.processing_rate_cycles_per_second} cycles/s",
+            f"- **Edge Processing Rate**: {self.results.config.processing_rate_cycles_per_second:.3e} cycles/s",
+            f"- **Cloud Processing Rate**: {self.results.config.cloud_processing_rate_cycles_per_second:.3e} cycles/s",
+            f"- **Cloud Execution**: {'enabled (logical Cloud, per-Task WAN)' if self.results.config.execute_cloud else 'disabled (CLOUD_UNAVAILABLE)'}",
             "",
             "## Workload Composition",
             "",
@@ -748,8 +813,7 @@ class RepresentativeWorkloadEvaluator:
             f"- **Prediction Cloud Rate**: {self.results.prediction_cloud_rate:.1%}",
             f"- **Execution Coverage**: {self.results.execution_coverage:.1%}",
             "",
-            "Note: Execution coverage is not directly comparable to Edge-only policies",
-            "when Cloud infrastructure is unavailable.",
+            "Note: with Cloud execution enabled, coverage counts both Edge- and Cloud-executed tasks.",
             "",
             "## Task-Level Results",
             "",
@@ -769,50 +833,55 @@ class RepresentativeWorkloadEvaluator:
 
         lines.extend([
             "",
-            "### Table B: Execution Metrics (Edge Tasks Only)",
+            "### Table B: Execution Metrics (Edge and Cloud executed tasks; seconds)",
             "",
-            "| Task | Server | Transmission | Propagation | Queue | Execution | Completion | Deadline Violation |",
-            "|------|--------|--------------|-------------|-------|-----------|------------|-------------------|",
+            "| Task | Destination | Transmission | Propagation | Queue | Execution | Completion | Deadline (ms) | Violation |",
+            "|------|-------------|--------------|-------------|-------|-----------|------------|--------------:|-----------|",
         ])
+
+        deadlines = {ti["task"].task_id: ti["task"].deadline_ms for ti in self.workload_tasks}
+
+        def _f(v: Optional[float], fmt: str) -> str:
+            return format(v, fmt) if v is not None else "N/A"
 
         # Add execution metrics for executed tasks
         for result in self.results.task_results:
-            if result.execution_status == "EXECUTED":
-                transmission = f"{result.transmission_time_s:.2f}" if result.transmission_time_s is not None else "N/A"
-                propagation = f"{result.propagation_delay_s:.3f}" if result.propagation_delay_s is not None else "N/A"
-                queue = f"{result.queue_time_s:.2f}" if result.queue_time_s is not None else "N/A"
-                execution = f"{result.execution_time_s:.2f}" if result.execution_time_s is not None else "N/A"
-                completion = f"{result.completion_time_s:.2f}" if result.completion_time_s is not None else "N/A"
-                deadline = "Yes" if result.deadline_violation else "No"
-
+            if result.execution_status in EXECUTED_STATUSES:
+                destination = (
+                    f"Edge {result.selected_edge_server_id}" if result.execution_status == "EXECUTED" else "Cloud (WAN)"
+                )
                 lines.append(
-                    f"| {result.task_id} | {result.selected_edge_server_id} | {transmission} | "
-                    f"{propagation} | {queue} | {execution} | {completion} | {deadline} |"
+                    f"| {result.task_id} | {destination} | {_f(result.transmission_time_s, '.2f')} | "
+                    f"{_f(result.propagation_delay_s, '.3f')} | {_f(result.queue_time_s, '.2f')} | "
+                    f"{_f(result.execution_time_s, '.3f')} | {_f(result.completion_time_s, '.2f')} | "
+                    f"{deadlines[result.task_id]:.0f} | {'Yes' if result.deadline_violation else 'No'} |"
                 )
 
-        lines.extend([
-            "",
-            "## Systemic Metrics (Edge-Executed Tasks)",
-            "",
-        ])
-
-        # Add systemic metrics
-        if self.results.systemic_metrics["executed_tasks"] > 0:
-            metrics = self.results.systemic_metrics
-            lines.extend([
+        def _systemic_block(title: str, metrics: Dict[str, Any]) -> List[str]:
+            if metrics.get("executed_tasks", 0) == 0:
+                return ["", f"### {title}", "", "No tasks executed."]
+            p95 = metrics.get("p95_completion_time_s")
+            return [
+                "",
+                f"### {title}",
+                "",
                 f"- **Executed Tasks**: {metrics['executed_tasks']}",
-                f"- **Mean Transmission Time**: {metrics.get('mean_transmission_time_s', 'N/A'):.2f} s",
-                f"- **Mean Propagation Delay**: {metrics.get('mean_propagation_delay_s', 'N/A'):.3f} s",
-                f"- **Mean Queue Time**: {metrics.get('mean_queue_time_s', 'N/A'):.2f} s",
-                f"- **Mean Execution Time**: {metrics.get('mean_execution_time_s', 'N/A'):.2f} s",
-                f"- **Mean Completion Time**: {metrics.get('mean_completion_time_s', 'N/A'):.2f} s",
-                f"- **P95 Completion Time**: {metrics.get('p95_completion_time_s', 'N/A')}",
-                f"- **Max Completion Time**: {metrics.get('max_completion_time_s', 'N/A'):.2f} s",
+                f"- **Mean Transmission Time**: {_f(metrics.get('mean_transmission_time_s'), '.2f')} s",
+                f"- **Mean Propagation Delay**: {_f(metrics.get('mean_propagation_delay_s'), '.3f')} s",
+                f"- **Mean Queue Time**: {_f(metrics.get('mean_queue_time_s'), '.2f')} s",
+                f"- **Mean Execution Time**: {_f(metrics.get('mean_execution_time_s'), '.3f')} s",
+                f"- **Mean Completion Time**: {_f(metrics.get('mean_completion_time_s'), '.2f')} s",
+                f"- **P95 Completion Time**: {_f(p95, '.2f') + ' s' if p95 is not None else 'N/A (n < 20)'}",
+                f"- **Max Completion Time**: {_f(metrics.get('max_completion_time_s'), '.2f')} s",
                 f"- **Deadline Violations**: {metrics.get('deadline_violation_count', 0)}",
-                f"- **Deadline Violation Rate**: {metrics.get('deadline_violation_rate', 'N/A'):.1%}",
-            ])
-        else:
-            lines.append("No tasks were executed (all predicted as Cloud or failed)")
+                f"- **Deadline Violation Rate**: {_f(metrics.get('deadline_violation_rate'), '.1%')}",
+            ]
+
+        lines.extend(["", "## Systemic Metrics"])
+        lines.extend(_systemic_block("All executed tasks", self.results.systemic_metrics))
+        by_dest = self.results.systemic_metrics.get("by_destination", {})
+        lines.extend(_systemic_block("Edge-executed tasks (EdgeSimPy topology, 12 GHz)", by_dest.get("Edge", {})))
+        lines.extend(_systemic_block("Cloud-executed tasks (logical Cloud, per-Task WAN, 60 GHz)", by_dest.get("Cloud", {})))
 
         lines.extend([
             "",
@@ -851,35 +920,39 @@ class RepresentativeWorkloadEvaluator:
             f"- Cloud → Edge errors: {self.results.confusion_matrix['Cloud']['Edge']} "
             f"(Edge predicted for Cloud tasks)",
             "",
-            "### CLOUD_UNAVAILABLE Effect",
-            f"- Tasks marked CLOUD_UNAVAILABLE: {sum(1 for r in self.results.task_results if r.execution_status == 'CLOUD_UNAVAILABLE')}",
-            f"- These tasks cannot be executed without Cloud infrastructure",
-            "",
-            "### Edge Execution",
-            f"- Tasks executed in EdgeSimPy: {self.results.systemic_metrics.get('executed_tasks', 0)}",
-            f"- Server selection delegated to NearestServerPolicy",
+            "### Execution",
+            f"- Edge-executed in EdgeSimPy topology: {by_dest.get('Edge', {}).get('executed_tasks', 0)} (server selection by NearestServerPolicy)",
+            f"- Cloud-executed on logical Cloud: {by_dest.get('Cloud', {}).get('executed_tasks', 0)}",
+            f"- CLOUD_UNAVAILABLE: {sum(1 for r in self.results.task_results if r.execution_status == 'CLOUD_UNAVAILABLE')}",
+            f"- Failed: {sum(1 for r in self.results.task_results if r.execution_status.endswith('FAILED'))}",
             "",
             "## Limitations",
             "",
-            "1. **Cloud Infrastructure**: Cloud is not implemented in EdgeSimPy, so Cloud-predicted",
-            "   tasks cannot be executed and are marked CLOUD_UNAVAILABLE.",
-            "2. **Execution Coverage**: The execution coverage metric is diagnostic only - it shows",
-            "   how much workload can be processed with current infrastructure, not policy quality.",
+            "1. **Logical Cloud (design option B)**: there is no Cloud node in the EdgeSimPy topology.",
+            "   Cloud WAN cost is computed from the Task's own scenario attributes",
+            "   (upload = TaskSizeMB*8/BandwidthMbps, propagation = NetworkLatencyMs) - the same",
+            "   attributes the policy decided on. This network term is analytical and shares its",
+            "   formula family with the label generator (partial circularity, declared). Queueing,",
+            "   arrival order, tick quantization and execution on the Cloud are simulated.",
+            "2. **Separate paths**: Cloud traffic does not share the Edge LAN links (consistent with",
+            "   the C# model, where the Edge path has no network term and the Cloud path has only WAN).",
             "3. **Network Feature Semantics**: BandwidthMbps/NetworkLatencyMs are per-scenario WAN",
-            "   conditions on the user->Cloud path (dataset contract) carried on the Task as scenario",
-            "   attributes. The topology-derived computation remains only as a documented fallback",
-            "   for Tasks without explicit WAN attributes, and is not the same random variable.",
-            "4. **Frozen Workload**: Sample IDs span the full dataset (not a single split). This is",
+            "   conditions carried on the Task. The topology-derived computation remains only as a",
+            "   documented fallback for Tasks without explicit WAN attributes.",
+            "4. **Units**: EdgeSimPy-native convention - data in MB, link bandwidth in MB/tick",
+            "   (tutorial link 12.5 MB/s = 100 Mbps), tick = 1 s. Sub-tick transfers register as 0 s.",
+            "5. **Frozen Workload**: Sample IDs span the full dataset (not a single split). This is",
             "   the frozen contract from the original experiment and must not be re-selected.",
-            "5. **Processing Rate**: Edge execution uses 12 GHz to match the C# analytical",
-            "   EdgeCapacityCyclesPerMs = 12,000,000 cycles/ms.",
+            "6. **Capacities**: Edge 12 GHz and Cloud 60 GHz match the C# analytical",
+            "   EdgeCapacityCyclesPerMs / CloudCapacityCyclesPerMs. Edge-path CPU/memory penalties of",
+            "   the C# formula are not modeled; Edge contention emerges from the FIFO queue instead.",
             "",
             "## Next Steps",
             "",
-            "1. Implement Cloud infrastructure in EdgeSimPy to execute Cloud-predicted tasks",
-            "2. Evaluate on full test set for final model assessment",
-            "3. Compare MLP performance against Edge-only policies with Cloud implementation",
-            "4. Analyze system-level impact of Edge/Cloud decisions on latency and resource utilization",
+            "1. Compare policies (Random, Nearest, LeastLoaded, Hybrid, MLP, WiSARD) at the systemic level",
+            "   with both destinations executable",
+            "2. Analyze deadline violations by destination and by task size / WAN condition",
+            "3. Stress scenarios (more concurrent tasks, worse WAN) and multiple seeds",
         ])
 
         # Write report
@@ -899,6 +972,10 @@ class RepresentativeWorkloadEvaluator:
                 "selection_seed": self.results.config.selection_seed,
                 "user_id": self.results.config.user_id,
                 "candidate_server_ids": self.results.config.candidate_server_ids,
+                "edge_processing_rate_cycles_per_second": self.results.config.processing_rate_cycles_per_second,
+                "cloud_processing_rate_cycles_per_second": self.results.config.cloud_processing_rate_cycles_per_second,
+                "execute_cloud": self.results.config.execute_cloud,
+                "cloud_model": "logical_cloud_per_task_wan (option B)",
             },
             "workload": {
                 "sample_ids": self.results.workload_sample_ids,

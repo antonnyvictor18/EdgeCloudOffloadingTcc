@@ -8,7 +8,11 @@
     "candidate_server_ids": [
       2,
       5
-    ]
+    ],
+    "edge_processing_rate_cycles_per_second": 12000000000.0,
+    "cloud_processing_rate_cycles_per_second": 60000000000.0,
+    "execute_cloud": true,
+    "cloud_model": "logical_cloud_per_task_wan (option B)"
   },
   "workload": {
     "sample_ids": [
@@ -78,19 +82,45 @@
   "coverage_metrics": {
     "prediction_edge_rate": 0.6,
     "prediction_cloud_rate": 0.4,
-    "execution_coverage": 0.6
+    "execution_coverage": 1.0
   },
   "systemic_metrics": {
-    "executed_tasks": 12,
-    "mean_transmission_time_s": 5227.666666666667,
-    "mean_propagation_delay_s": 0.015000000000000005,
-    "mean_queue_time_s": 0.0,
-    "mean_execution_time_s": 0.18795468177802613,
-    "mean_completion_time_s": 5229.666666666667,
-    "p95_completion_time_s": null,
-    "max_completion_time_s": 18632.0,
-    "deadline_violation_count": 12,
-    "deadline_violation_rate": 1.0
+    "executed_tasks": 20,
+    "mean_transmission_time_s": 3.067896593211594,
+    "mean_propagation_delay_s": 0.0397228305,
+    "mean_queue_time_s": 2.4,
+    "mean_execution_time_s": 0.1461961319591638,
+    "mean_completion_time_s": 7.4,
+    "p95_completion_time_s": 19.05,
+    "max_completion_time_s": 20.0,
+    "deadline_violation_count": 15,
+    "deadline_violation_rate": 0.75,
+    "by_destination": {
+      "Edge": {
+        "executed_tasks": 12,
+        "mean_transmission_time_s": 4.666666666666667,
+        "mean_propagation_delay_s": 0.004999999999999999,
+        "mean_queue_time_s": 2.0,
+        "mean_execution_time_s": 0.1879546817777428,
+        "mean_completion_time_s": 8.666666666666666,
+        "p95_completion_time_s": null,
+        "max_completion_time_s": 20.0,
+        "deadline_violation_count": 10,
+        "deadline_violation_rate": 0.8333333333333334
+      },
+      "Cloud": {
+        "executed_tasks": 8,
+        "mean_transmission_time_s": 0.6697414830289852,
+        "mean_propagation_delay_s": 0.09180707625000001,
+        "mean_queue_time_s": 3.0,
+        "mean_execution_time_s": 0.08355830723129529,
+        "mean_completion_time_s": 5.5,
+        "p95_completion_time_s": null,
+        "max_completion_time_s": 9.0,
+        "deadline_violation_count": 5,
+        "deadline_violation_rate": 0.625
+      }
+    }
   },
   "task_results": [
     {
@@ -98,14 +128,14 @@
       "sample_id": 17,
       "analytical_label": "Cloud",
       "prediction": "Cloud",
-      "execution_status": "CLOUD_UNAVAILABLE",
+      "execution_status": "EXECUTED_CLOUD",
       "selected_edge_server_id": null,
-      "transmission_time_s": null,
-      "propagation_delay_s": null,
-      "queue_time_s": null,
-      "execution_time_s": null,
-      "completion_time_s": null,
-      "deadline_violation": null
+      "transmission_time_s": 0.12287391975234573,
+      "propagation_delay_s": 0.08505623,
+      "queue_time_s": 0.0,
+      "execution_time_s": 0.11128762665652725,
+      "completion_time_s": 2.0,
+      "deadline_violation": true
     },
     {
       "task_id": "task_01",
@@ -114,11 +144,11 @@
       "prediction": "Edge",
       "execution_status": "EXECUTED",
       "selected_edge_server_id": 5,
-      "transmission_time_s": 5892.0,
-      "propagation_delay_s": 0.015,
-      "queue_time_s": 0.0,
-      "execution_time_s": 0.1254910976940664,
-      "completion_time_s": 5894.0,
+      "transmission_time_s": 5.0,
+      "propagation_delay_s": 0.005,
+      "queue_time_s": 4.0,
+      "execution_time_s": 0.125491097693871,
+      "completion_time_s": 11.0,
       "deadline_violation": true
     },
     {
@@ -126,14 +156,14 @@
       "sample_id": 955,
       "analytical_label": "Cloud",
       "prediction": "Cloud",
-      "execution_status": "CLOUD_UNAVAILABLE",
+      "execution_status": "EXECUTED_CLOUD",
       "selected_edge_server_id": null,
-      "transmission_time_s": null,
-      "propagation_delay_s": null,
-      "queue_time_s": null,
-      "execution_time_s": null,
-      "completion_time_s": null,
-      "deadline_violation": null
+      "transmission_time_s": 0.01958920129755829,
+      "propagation_delay_s": 0.0623526,
+      "queue_time_s": 1.0,
+      "execution_time_s": 0.056934730814661716,
+      "completion_time_s": 3.0,
+      "deadline_violation": false
     },
     {
       "task_id": "task_03",
@@ -142,11 +172,11 @@
       "prediction": "Edge",
       "execution_status": "EXECUTED",
       "selected_edge_server_id": 5,
-      "transmission_time_s": 18630.0,
-      "propagation_delay_s": 0.015,
+      "transmission_time_s": 18.0,
+      "propagation_delay_s": 0.005,
       "queue_time_s": 0.0,
-      "execution_time_s": 0.15238527635665378,
-      "completion_time_s": 18632.0,
+      "execution_time_s": 0.15238527635533927,
+      "completion_time_s": 20.0,
       "deadline_violation": true
     },
     {
@@ -156,11 +186,11 @@
       "prediction": "Edge",
       "execution_status": "EXECUTED",
       "selected_edge_server_id": 5,
-      "transmission_time_s": 1237.0,
-      "propagation_delay_s": 0.015,
-      "queue_time_s": 0.0,
-      "execution_time_s": 0.02391432674630778,
-      "completion_time_s": 1239.0,
+      "transmission_time_s": 1.0,
+      "propagation_delay_s": 0.005,
+      "queue_time_s": 1.0,
+      "execution_time_s": 0.02391432674628735,
+      "completion_time_s": 4.0,
       "deadline_violation": true
     },
     {
@@ -170,26 +200,26 @@
       "prediction": "Edge",
       "execution_status": "EXECUTED",
       "selected_edge_server_id": 5,
-      "transmission_time_s": 139.0,
-      "propagation_delay_s": 0.015,
+      "transmission_time_s": 0.0,
+      "propagation_delay_s": 0.005,
       "queue_time_s": 0.0,
-      "execution_time_s": 0.08683724439632101,
-      "completion_time_s": 141.0,
-      "deadline_violation": true
+      "execution_time_s": 0.08683724439633256,
+      "completion_time_s": 2.0,
+      "deadline_violation": false
     },
     {
       "task_id": "task_06",
       "sample_id": 5969,
       "analytical_label": "Cloud",
       "prediction": "Cloud",
-      "execution_status": "CLOUD_UNAVAILABLE",
+      "execution_status": "EXECUTED_CLOUD",
       "selected_edge_server_id": null,
-      "transmission_time_s": null,
-      "propagation_delay_s": null,
-      "queue_time_s": null,
-      "execution_time_s": null,
-      "completion_time_s": null,
-      "deadline_violation": null
+      "transmission_time_s": 0.0033632244459064964,
+      "propagation_delay_s": 0.11379646,
+      "queue_time_s": 2.0,
+      "execution_time_s": 0.12396725718621182,
+      "completion_time_s": 4.0,
+      "deadline_violation": false
     },
     {
       "task_id": "task_07",
@@ -198,11 +228,11 @@
       "prediction": "Edge",
       "execution_status": "EXECUTED",
       "selected_edge_server_id": 5,
-      "transmission_time_s": 1737.0,
-      "propagation_delay_s": 0.015,
-      "queue_time_s": 0.0,
-      "execution_time_s": 0.25550798084464077,
-      "completion_time_s": 1739.0,
+      "transmission_time_s": 1.0,
+      "propagation_delay_s": 0.005,
+      "queue_time_s": 2.0,
+      "execution_time_s": 0.25550798084455284,
+      "completion_time_s": 5.0,
       "deadline_violation": true
     },
     {
@@ -210,28 +240,28 @@
       "sample_id": 6779,
       "analytical_label": "Cloud",
       "prediction": "Cloud",
-      "execution_status": "CLOUD_UNAVAILABLE",
+      "execution_status": "EXECUTED_CLOUD",
       "selected_edge_server_id": null,
-      "transmission_time_s": null,
-      "propagation_delay_s": null,
-      "queue_time_s": null,
-      "execution_time_s": null,
-      "completion_time_s": null,
-      "deadline_violation": null
+      "transmission_time_s": 0.3425269256841996,
+      "propagation_delay_s": 0.16407384,
+      "queue_time_s": 3.0,
+      "execution_time_s": 0.10551630047678451,
+      "completion_time_s": 5.0,
+      "deadline_violation": false
     },
     {
       "task_id": "task_09",
       "sample_id": 8181,
       "analytical_label": "Cloud",
       "prediction": "Cloud",
-      "execution_status": "CLOUD_UNAVAILABLE",
+      "execution_status": "EXECUTED_CLOUD",
       "selected_edge_server_id": null,
-      "transmission_time_s": null,
-      "propagation_delay_s": null,
-      "queue_time_s": null,
-      "execution_time_s": null,
-      "completion_time_s": null,
-      "deadline_violation": null
+      "transmission_time_s": 0.126257452312544,
+      "propagation_delay_s": 0.0628226,
+      "queue_time_s": 4.0,
+      "execution_time_s": 0.11074604767797513,
+      "completion_time_s": 6.0,
+      "deadline_violation": true
     },
     {
       "task_id": "task_10",
@@ -240,11 +270,11 @@
       "prediction": "Edge",
       "execution_status": "EXECUTED",
       "selected_edge_server_id": 5,
-      "transmission_time_s": 3177.0,
-      "propagation_delay_s": 0.015,
-      "queue_time_s": 0.0,
-      "execution_time_s": 0.1968659687267973,
-      "completion_time_s": 3179.0,
+      "transmission_time_s": 3.0,
+      "propagation_delay_s": 0.005,
+      "queue_time_s": 3.0,
+      "execution_time_s": 0.19686596872682305,
+      "completion_time_s": 8.0,
       "deadline_violation": true
     },
     {
@@ -252,14 +282,14 @@
       "sample_id": 8743,
       "analytical_label": "Edge",
       "prediction": "Cloud",
-      "execution_status": "CLOUD_UNAVAILABLE",
+      "execution_status": "EXECUTED_CLOUD",
       "selected_edge_server_id": null,
-      "transmission_time_s": null,
-      "propagation_delay_s": null,
-      "queue_time_s": null,
-      "execution_time_s": null,
-      "completion_time_s": null,
-      "deadline_violation": null
+      "transmission_time_s": 4.52019684491505,
+      "propagation_delay_s": 0.07317713,
+      "queue_time_s": 3.0,
+      "execution_time_s": 0.10144830768452096,
+      "completion_time_s": 9.0,
+      "deadline_violation": true
     },
     {
       "task_id": "task_12",
@@ -268,11 +298,11 @@
       "prediction": "Edge",
       "execution_status": "EXECUTED",
       "selected_edge_server_id": 5,
-      "transmission_time_s": 18203.0,
-      "propagation_delay_s": 0.015,
+      "transmission_time_s": 17.0,
+      "propagation_delay_s": 0.005,
       "queue_time_s": 0.0,
-      "execution_time_s": 0.23130160659275134,
-      "completion_time_s": 18205.0,
+      "execution_time_s": 0.231301606591078,
+      "completion_time_s": 19.0,
       "deadline_violation": true
     },
     {
@@ -280,14 +310,14 @@
       "sample_id": 11312,
       "analytical_label": "Cloud",
       "prediction": "Cloud",
-      "execution_status": "CLOUD_UNAVAILABLE",
+      "execution_status": "EXECUTED_CLOUD",
       "selected_edge_server_id": null,
-      "transmission_time_s": null,
-      "propagation_delay_s": null,
-      "queue_time_s": null,
-      "execution_time_s": null,
-      "completion_time_s": null,
-      "deadline_violation": null
+      "transmission_time_s": 0.0831010374772676,
+      "propagation_delay_s": 0.032949530000000005,
+      "queue_time_s": 5.0,
+      "execution_time_s": 0.02359340295751,
+      "completion_time_s": 7.0,
+      "deadline_violation": true
     },
     {
       "task_id": "task_14",
@@ -296,11 +326,11 @@
       "prediction": "Edge",
       "execution_status": "EXECUTED",
       "selected_edge_server_id": 5,
-      "transmission_time_s": 4824.0,
-      "propagation_delay_s": 0.015,
-      "queue_time_s": 0.0,
-      "execution_time_s": 0.1493338947320808,
-      "completion_time_s": 4826.0,
+      "transmission_time_s": 4.0,
+      "propagation_delay_s": 0.005,
+      "queue_time_s": 3.0,
+      "execution_time_s": 0.14933389473170955,
+      "completion_time_s": 9.0,
       "deadline_violation": true
     },
     {
@@ -310,11 +340,11 @@
       "prediction": "Edge",
       "execution_status": "EXECUTED",
       "selected_edge_server_id": 5,
-      "transmission_time_s": 4129.0,
-      "propagation_delay_s": 0.015,
-      "queue_time_s": 0.0,
-      "execution_time_s": 0.1249181821494858,
-      "completion_time_s": 4131.0,
+      "transmission_time_s": 4.0,
+      "propagation_delay_s": 0.005,
+      "queue_time_s": 4.0,
+      "execution_time_s": 0.12491818214956929,
+      "completion_time_s": 10.0,
       "deadline_violation": true
     },
     {
@@ -324,12 +354,12 @@
       "prediction": "Edge",
       "execution_status": "EXECUTED",
       "selected_edge_server_id": 5,
-      "transmission_time_s": 633.0,
-      "propagation_delay_s": 0.015,
-      "queue_time_s": 0.0,
-      "execution_time_s": 0.16623642034028308,
-      "completion_time_s": 635.0,
-      "deadline_violation": true
+      "transmission_time_s": 0.0,
+      "propagation_delay_s": 0.005,
+      "queue_time_s": 1.0,
+      "execution_time_s": 0.16623642034032482,
+      "completion_time_s": 3.0,
+      "deadline_violation": false
     },
     {
       "task_id": "task_17",
@@ -338,11 +368,11 @@
       "prediction": "Edge",
       "execution_status": "EXECUTED",
       "selected_edge_server_id": 5,
-      "transmission_time_s": 1538.0,
-      "propagation_delay_s": 0.015,
-      "queue_time_s": 0.0,
-      "execution_time_s": 0.3659897969255326,
-      "completion_time_s": 1540.0,
+      "transmission_time_s": 1.0,
+      "propagation_delay_s": 0.005,
+      "queue_time_s": 3.0,
+      "execution_time_s": 0.3659897969256418,
+      "completion_time_s": 6.0,
       "deadline_violation": true
     },
     {
@@ -352,11 +382,11 @@
       "prediction": "Edge",
       "execution_status": "EXECUTED",
       "selected_edge_server_id": 5,
-      "transmission_time_s": 2593.0,
-      "propagation_delay_s": 0.015,
-      "queue_time_s": 0.0,
-      "execution_time_s": 0.376674385831393,
-      "completion_time_s": 2595.0,
+      "transmission_time_s": 2.0,
+      "propagation_delay_s": 0.005,
+      "queue_time_s": 3.0,
+      "execution_time_s": 0.37667438583138413,
+      "completion_time_s": 7.0,
       "deadline_violation": true
     },
     {
@@ -364,14 +394,14 @@
       "sample_id": 13549,
       "analytical_label": "Cloud",
       "prediction": "Cloud",
-      "execution_status": "CLOUD_UNAVAILABLE",
+      "execution_status": "EXECUTED_CLOUD",
       "selected_edge_server_id": null,
-      "transmission_time_s": null,
-      "propagation_delay_s": null,
-      "queue_time_s": null,
-      "execution_time_s": null,
-      "completion_time_s": null,
-      "deadline_violation": null
+      "transmission_time_s": 0.14002325834701004,
+      "propagation_delay_s": 0.14022822,
+      "queue_time_s": 6.0,
+      "execution_time_s": 0.03497278439617091,
+      "completion_time_s": 8.0,
+      "deadline_violation": true
     }
   ],
   "summary": {
@@ -379,7 +409,7 @@
       "total_tasks": 20,
       "edge_selections": 20,
       "server_distribution": {
-        "2": 20
+        "5": 20
       }
     }
   }
