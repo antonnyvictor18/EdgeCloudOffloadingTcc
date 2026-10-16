@@ -20,6 +20,53 @@ from execution.task_scheduler import TaskScheduler
 from .task_network_flow import TaskNetworkFlow
 
 
+def configure_simulator_tick_resolution(
+    simulator: Any,
+    tick_duration_s: float = 1.0,
+    reference_tick_duration_s: float = 1.0,
+) -> float:
+    """Configure EdgeSimPy tick duration and rescale link bandwidths accordingly.
+
+    In EdgeSimPy, NetworkFlow.step() subtracts ``min(self.bandwidth.values())``
+    from ``data_to_transfer`` ONCE PER TICK, so a link's ``bandwidth`` attribute
+    represents **MB transferred per tick**, not MB per second. The tutorial
+    datasets define ``bandwidth = 12.5`` assuming ``tick_duration = 1.0 s``
+    (i.e. 12.5 MB/s = 100 Mbps).
+
+    When ``tick_duration_s`` is changed (e.g. to ``0.1 s`` for sub-second queue
+    and execution resolution), every NetworkLink's ``bandwidth`` must be scaled
+    by ``tick_duration_s / reference_tick_duration_s`` (e.g. ``1.25 MB/tick``)
+    so the physical throughput in MB/s (and Mbps) remains invariant. The
+    original per-second rate is preserved in ``link["bandwidth_mb_per_s"]``.
+
+    Returns the scale factor applied.
+    """
+    if tick_duration_s <= 0:
+        raise ValueError(f"tick_duration_s must be positive, got {tick_duration_s}")
+    if reference_tick_duration_s <= 0:
+        raise ValueError(
+            f"reference_tick_duration_s must be positive, got {reference_tick_duration_s}"
+        )
+
+    scale = float(tick_duration_s) / float(reference_tick_duration_s)
+    simulator.tick_duration = float(tick_duration_s)
+
+    if getattr(simulator, "topology", None) is not None:
+        for _, _, link in simulator.topology.edges(data=True):
+            if "bandwidth" in link and link["bandwidth"] is not None:
+                base_bw = link.get("bandwidth_mb_per_s", float(link["bandwidth"]))
+                link["bandwidth_mb_per_s"] = base_bw
+                link["bandwidth"] = base_bw * scale
+                if "bandwidth_demand" in link and link["bandwidth_demand"] is not None:
+                    base_demand = link.get(
+                        "bandwidth_demand_mb_per_s", float(link["bandwidth_demand"])
+                    )
+                    link["bandwidth_demand_mb_per_s"] = base_demand
+                    link["bandwidth_demand"] = base_demand * scale
+
+    return scale
+
+
 @dataclass
 class TickMetrics:
     """Metrics collected at each simulation tick for debugging and validation."""

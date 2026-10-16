@@ -11,6 +11,7 @@ from .task_network_flow import TaskNetworkFlow
 from .task_scheduler_integration import (
     TaskSchedulerIntegration,
     TickMetrics,
+    configure_simulator_tick_resolution,
 )
 
 __all__ = [
@@ -22,4 +23,5 @@ __all__ = [
     "TaskNetworkFlow",
     "TaskSchedulerIntegration",
     "TickMetrics",
+    "configure_simulator_tick_resolution",
 ]

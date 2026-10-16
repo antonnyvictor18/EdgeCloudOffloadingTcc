@@ -88,21 +88,60 @@ Status: completed (2026-09-04).
   `src/diagnostico_integracao_task_scheduler.py`
 - No EdgeSimPy source files modified
 
-## Phase 7 — Extensions (NetworkFlow, Cloud, ML, mobility)
-Status: current / next.
+## Phase 7 — TaskNetworkFlow (Edge upload over EdgeSimPy topology)
+Status: completed.
 
-Goal: implement NetworkFlow for Task data transmission, Cloud, full offloading,
-ML policies, or other extensions, maintaining the same methodology of
-decision → implementation → diagnostic → validation.
+- Implemented `TaskNetworkFlow` (`src/integration/task_network_flow.py`) and integrated upload monitoring into `TaskSchedulerIntegration`.
+- Validated lifecycle `CREATED → TRANSMITTING → QUEUED → EXECUTING → COMPLETED` (`src/test_task_network_flow.py`, `src/test_task_scheduler_with_network.py`).
 
-## Deferred phases (do not start before Phase 6 is validated)
+## Phases 8–14 — Offloading policies, ML pipeline & feature-set contract
+Status: completed.
 
-- NetworkFlow for Task data transmission.
-- Full Edge/Cloud offloading decision.
-- Cloud entity/representation.
-- C# ↔ Python integration (CSV/JSON contract).
-- ML policies (WiSARD, MLP) wired into EdgeSimPy.
-- Mobility.
-- System-level evaluation matrix: latency, P95/P99, deadlines, completion,
-  throughput, CPU/RAM/network utilization, energy, stress experiments,
-  thesis-level reporting.
+- Implemented Edge server selection policies (`FixedServerPolicy`, `NearestServerPolicy`, `RandomPolicy`, `LeastLoadedPolicy`, `HybridHeuristicPolicy` in `src/policies/offloading.py`).
+- Built dataset loader, stratified splitting, min-max preprocessing, `MLPModel` and `WiSARDModel` (`src/ml/`).
+- Audited the C# analytical label formula (`EdgeCloudSimulator.cs`) and froze the 6-feature contract (`CpuCycles`, `TaskSizeMB`, `LatencySensitivity`, `RequiredMemoryMB`, `BandwidthMbps`, `NetworkLatencyMs`) and frozen artifact `models/mlp_final_6.{npz,json}`.
+
+## Phases 15–16 — Training-to-inference parity audit & WAN semantics resolution
+Status: completed (2026-09-09).
+
+- Fixed double normalization in `MLPOffloadingPolicy.predict()` (`src/policies/ml_offloading.py`).
+- Resolved WAN feature semantics: `BandwidthMbps` and `NetworkLatencyMs` in C# represent user→Cloud WAN scenario conditions, now carried directly on `Task` (`task.bandwidth_mbps`, `task.network_latency_ms`).
+- Preserved exact `Task` identity from decision to execution and achieved **20/20 exact continuous-output and class parity** (`src/test_mlp_policy_parity.py`).
+
+## Phases 17–18 — WiSARD integration & controlled hyperparameter study
+Status: completed (2026-10-12).
+
+- Connected `WiSARDOffloadingPolicy` to the shared 6-feature extraction pipeline (`extract_task_features`) with 20/20 prediction and discriminator-score parity (`src/test_wisard_policy_parity.py`).
+- Diagnosed the structural all-Edge collapse of the 4-bit binary default (24 bits → 3 RAMs, 78–87% tie rate) and ran a validation-only grid (72 configs × 5 seeds, `src/experimento_tuning_wisard.py`).
+- Selected `WISARD_FINAL_6` (`thermometer`, `bits_per_feature=64`, `ram_address_size=16`, `bleaching=True`, `seed=7`), raising validation macro-F1 from `0.395` to `0.729 ± 0.011`.
+
+## Phase 19 — Canonical split reproducibility fix & final test-set evaluation
+Status: completed (2026-10-13).
+
+- Fixed `PYTHONHASHSEED`-dependent split order caused by iterating over `frozenset` `VALID_LABELS` (`sorted(VALID_LABELS)` in `src/ml/dataset.py` and `dataset_full.py`).
+- Evaluated frozen `MLP_final_6` and `WISARD_FINAL_6` once on the untouched canonical test set (`n = 2250`, `src/experimento_avaliacao_test_set.py`):
+  - `MLP_final_6`: accuracy `0.817` `[0.802, 0.833]`, macro-F1 `0.803` `[0.787, 0.820]`.
+  - `WISARD_FINAL_6`: accuracy `0.747` `[0.729, 0.764]`, macro-F1 `0.718` `[0.698, 0.737]`.
+  - Paired McNemar test: `284` vs `126` discordant pairs (`p = 4e-15`), zero policy/model divergences across all 2,250 test tasks.
+
+## Phases 20–21 — Coherent Edge network units & logical CloudExecutor (Option B)
+Status: completed (2026-10-13).
+
+- Aligned `TaskNetworkFlow` with EdgeSimPy's native unit convention (`data_to_transfer = task.data_size_mb` in MB; `link.bandwidth = 12.5` MB/tick = 100 Mbps at 1 s tick), removing the artificial `×1024` inflation.
+- Implemented `CloudExecutor` (`src/integration/cloud_executor.py`, tested in `src/test_cloud_executor.py`): logical Cloud outside the Edge graph using the Task's own WAN attributes (`upload = MB*8/bandwidth_mbps`, `propagation = network_latency_ms/1000`), tick-quantized arrival, and `TaskScheduler` at `60 GHz` (`CloudCapacityCyclesPerMs`).
+- Achieved 100% workload execution coverage (20/20 tasks executed in the same EdgeSimPy clock).
+
+## Phase 22 — Destination-level systemic comparison on the frozen workload
+Status: completed (2026-10-13).
+
+- Compared `AlwaysEdge`, `AlwaysCloud`, `RandomDestination` (5 seeds), `Oracle`, `MLP`, and `WiSARD` end-to-end (`src/experimento_comparativo_destinos.py`, `results/comparativo_destinos_workload.{md,json}`).
+
+## Phases 23–24 — Sub-second tick resolution (`0.1 s`), queue disciplines (`FIFO`, `SJF`, `EDF`, `LLF`, `EDF_FEASIBLE`) & multi-workload systemic study
+Status: completed (2026-10-14).
+
+- Implemented `configure_simulator_tick_resolution` (`src/integration/task_scheduler_integration.py`) scaling `link["bandwidth"]` proportionally to `tick_duration_s` (`1.25 MB/tick` at `0.1 s` = `12.5 MB/s = 100 Mbps`), eliminating the 1-second-per-task queue quantization artifact.
+- Extended `TaskQueue` / `TaskScheduler` / `CloudExecutor` with 5 scheduling disciplines (`fifo`, `sjf`, `edf`, `llf`, `edf_feasible`), including `edf_feasible` to demote expired "zombie tasks" behind feasible tasks (`src/test_queue_policies.py`).
+- Executed full factorial (`src/experimento_filas_e_ticks.py`) and 10-workload multi-seed systemic evaluation (`10 workloads × 20 tasks = 200 tasks` per policy-queue pair, `src/experimento_multi_workload_sistemico.py`, `results/experimento_multi_workload_sistemico.{md,json}`):
+  - `MLP` (`6.40–6.48 s` completion) and `WiSARD` (`6.75–6.81 s`) match the analytical `Oracle` (`6.69–6.73 s`) and outperform `AlwaysEdge` (`9.59 s`) and `AlwaysCloud` (`8.87 s`).
+  - `SJF` reduces mean queue waiting time by **18%–31%** across every destination policy.
+  - `EDF_FEASIBLE` achieves the lowest deadline violation rate across **all 6 destination policies** (e.g., `MLP + EDF_FEASIBLE`: `36.0%` vs `41.0%` under FIFO; `AlwaysEdge + EDF_FEASIBLE`: `59.0%` vs `66.5%` under blind EDF).

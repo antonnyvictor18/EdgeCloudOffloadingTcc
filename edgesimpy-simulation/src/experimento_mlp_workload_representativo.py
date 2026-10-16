@@ -35,7 +35,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "edgesimpy-source"))
 
 from edge_sim_py import EdgeServer, Simulator, User
-from integration import CLOUD_PROCESSING_RATE_CYCLES_PER_SECOND, CloudExecutor, TaskSchedulerIntegration
+from integration import (
+    CLOUD_PROCESSING_RATE_CYCLES_PER_SECOND,
+    CloudExecutor,
+    TaskSchedulerIntegration,
+    configure_simulator_tick_resolution,
+)
 from models import Task, TaskStatus
 from execution.task_scheduler import TaskScheduler
 from ml.dataset import FEATURE_NAMES, load_offloading_dataset
@@ -92,6 +97,8 @@ class RepresentativeWorkloadConfig:
     # "wisard" (trained in-session on dataset.train, seeded)
     policy: str = "mlp"
     model_path: Optional[Path] = None
+    # Local server/Cloud queue scheduling discipline: "fifo" (default), "sjf", "edf", "llf"
+    queue_policy: str = "fifo"
 
 
 @dataclass
@@ -276,9 +283,13 @@ class RepresentativeWorkloadEvaluator:
         print(f"Step 3: Evaluating {self.config.policy.upper()} Predictions")
         print("="*60)
 
-        # Create simulator for the entire experiment (single context)
+        # Create simulator for the entire experiment (single context) and
+        # configure temporal resolution + link bandwidth scaling
         self.simulator = Simulator()
         self.simulator.initialize(input_file=self.config.dataset)
+        configure_simulator_tick_resolution(
+            self.simulator, tick_duration_s=self.config.tick_duration_s
+        )
 
         user = User.find_by_id(self.config.user_id)
         if user is None:
@@ -375,7 +386,8 @@ class RepresentativeWorkloadEvaluator:
 
         # Create TaskScheduler
         task_scheduler = TaskScheduler(
-            processing_rate_cycles_per_second=self.config.processing_rate_cycles_per_second
+            processing_rate_cycles_per_second=self.config.processing_rate_cycles_per_second,
+            queue_policy=self.config.queue_policy,
         )
 
         # Create scheduler integration with the existing simulator
@@ -386,6 +398,7 @@ class RepresentativeWorkloadEvaluator:
         cloud_executor = CloudExecutor(
             simulator=execution_simulator,
             processing_rate_cycles_per_second=self.config.cloud_processing_rate_cycles_per_second,
+            queue_policy=self.config.queue_policy,
         )
         self.cloud_executor = cloud_executor
 

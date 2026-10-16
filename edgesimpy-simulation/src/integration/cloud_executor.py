@@ -28,6 +28,7 @@ and raises ValueError.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -72,6 +73,7 @@ class CloudExecutor:
 
     simulator: Any
     processing_rate_cycles_per_second: float = CLOUD_PROCESSING_RATE_CYCLES_PER_SECOND
+    queue_policy: str = "fifo"
     node: CloudNode = field(default_factory=CloudNode)
     scheduler: TaskScheduler = field(init=False)
     pending_submissions: List[Task] = field(default_factory=list)
@@ -80,7 +82,8 @@ class CloudExecutor:
 
     def __post_init__(self) -> None:
         self.scheduler = TaskScheduler(
-            processing_rate_cycles_per_second=self.processing_rate_cycles_per_second
+            processing_rate_cycles_per_second=self.processing_rate_cycles_per_second,
+            queue_policy=self.queue_policy,
         )
 
     # ------------------------------------------------------------------ API
@@ -105,8 +108,11 @@ class CloudExecutor:
             task = self.pending_submissions.pop(0)
             self._start_upload(task, current_time_s, tick)
 
-        # Deliver tasks whose WAN transfer has arrived
-        arrived = [tid for tid, tr in self.in_transit.items() if tr.arrival_tick_time_s <= current_time_s]
+        # Deliver tasks whose WAN transfer has arrived (allow floating-point tolerance)
+        arrived = [
+            tid for tid, tr in self.in_transit.items()
+            if tr.arrival_tick_time_s <= current_time_s + 1e-12
+        ]
         for tid in arrived:
             transfer = self.in_transit.pop(tid)
             task = transfer.task
@@ -126,8 +132,8 @@ class CloudExecutor:
         propagation_s = float(task.network_latency_ms) / 1000.0
         arrival_s = current_time_s + upload_s + propagation_s
         # Quantize to the tick grid (ceil), as a NetworkFlow only completes at a tick
-        ticks = -(-(arrival_s - current_time_s) // tick)  # ceil division
-        arrival_tick_s = current_time_s + ticks * tick
+        ticks = math.ceil((arrival_s - current_time_s - 1e-12) / tick)
+        arrival_tick_s = current_time_s + max(0, ticks) * tick
 
         task.status = TaskStatus.TRANSMITTING
         task.transmission_start_time_s = current_time_s

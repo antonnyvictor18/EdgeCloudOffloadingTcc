@@ -138,7 +138,12 @@ def _bandwidth_feature(task: Any, topology: Any) -> float:
             for i in range(len(path) - 1):
                 link = topology[path[i]][path[i + 1]]
                 if link and hasattr(link, "bandwidth"):
-                    path_bandwidths.append(link.bandwidth)
+                    bw_per_s = (
+                        link["bandwidth_mb_per_s"]
+                        if "bandwidth_mb_per_s" in link
+                        else link.bandwidth
+                    )
+                    path_bandwidths.append(bw_per_s)
 
             if path_bandwidths:
                 bandwidths.append(min(path_bandwidths))

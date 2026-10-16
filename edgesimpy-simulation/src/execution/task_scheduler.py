@@ -5,7 +5,7 @@ from typing import Any, Dict, Optional
 
 from models import Task, TaskStatus
 from models.task_execution import TaskExecution
-from .task_queue import TaskQueue
+from .task_queue import TaskQueue, normalize_queue_policy
 from .task_execution import TaskExecutionConfig
 
 
@@ -19,8 +19,12 @@ class TaskScheduler:
     """
 
     processing_rate_cycles_per_second: float
+    queue_policy: str = "fifo"
     queues: Dict[Any, TaskQueue] = field(default_factory=dict)
     task_memory_usage: Dict[Any, float] = field(default_factory=dict)  # server -> memory_mb
+
+    def __post_init__(self) -> None:
+        self.queue_policy = normalize_queue_policy(self.queue_policy)
 
     def submit_task(self, task: Task, server: Any, current_time_s: float) -> bool:
         """Submit a Task to the queue of the specified server.
@@ -29,7 +33,12 @@ class TaskScheduler:
         """
         # Get or create queue for this server
         if server not in self.queues:
-            self.queues[server] = TaskQueue(server=server, max_concurrent_tasks=1)
+            self.queues[server] = TaskQueue(
+                server=server,
+                max_concurrent_tasks=1,
+                queue_policy=self.queue_policy,
+                processing_rate_cycles_per_second=self.processing_rate_cycles_per_second,
+            )
 
         queue = self.queues[server]
 
@@ -48,9 +57,10 @@ class TaskScheduler:
         become available. It does not modify EdgeSimPy's native state.
         """
         for server, queue in self.queues.items():
-            # Check if current task has completed
+            # Check if current task has completed (allow floating-point tolerance
+            # for sub-second tick steps such as 0.1 * 3 == 0.30000000000000004)
             if queue.has_active_execution():
-                if current_time_s >= queue.current_execution_end_time_s:
+                if current_time_s + 1e-12 >= queue.current_execution_end_time_s:
                     self._complete_current_task(queue, current_time_s)
 
             # Start next task if server is available
@@ -59,7 +69,7 @@ class TaskScheduler:
 
     def _start_next_task(self, queue: TaskQueue, current_time_s: float) -> None:
         """Start executing the next Task in the queue."""
-        task = queue.dequeue()
+        task = queue.dequeue(current_time_s=current_time_s)
         if task is None:
             return
 

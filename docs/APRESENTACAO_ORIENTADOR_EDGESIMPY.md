@@ -3,7 +3,10 @@
 > Roteiro de apresentação para explicar, passo a passo, tudo o que foi feito
 > em `edgesimpy-simulation/` até agora: conceitos, entidades, componentes,
 > fluxos, decisões metodológicas, experimentos e resultados reais.
-> Data de referência: 28/08/2026.
+> Data de referência consolidada: 14/10/2026 (cobre da Fase 0 até a Fase 24;
+> ver a seção 15 ao final para o roteiro das Fases 15–24: paridade ML, tuning
+> WiSARD, test set canônico, CloudExecutor, resolução de 0,1 s, disciplinas de
+> fila `FIFO/SJF/EDF/EDF_FEASIBLE` e avaliação multi-workload).
 
 ---
 
@@ -703,4 +706,61 @@ Comando para reexecutar o experimento ao vivo, se o orientador pedir:
 cd edgesimpy-simulation
 .\.venv\Scripts\python.exe src\diagnostico_task_scheduler.py
 .\.venv\Scripts\python.exe src\test_task_scheduler.py
+.\.venv\Scripts\python.exe src\test_mlp_policy_parity.py
+.\.venv\Scripts\python.exe src\test_wisard_policy_parity.py
+.\.venv\Scripts\python.exe src\test_cloud_executor.py
+.\.venv\Scripts\python.exe src\test_queue_policies.py
+.\.venv\Scripts\python.exe src\experimento_avaliacao_test_set.py
+.\.venv\Scripts\python.exe src\experimento_filas_e_ticks.py
+.\.venv\Scripts\python.exe src\experimento_multi_workload_sistemico.py
 ```
+
+---
+
+## 15. Consolidação Final para a Banca / Orientador (Fases 15 a 24 — Outubro/2026)
+
+Esta seção resume os resultados científicos finais obtidos após a integração completa entre o gerador analítico C# e o simulador de eventos discretos Python/EdgeSimPy.
+
+### 15.1 Auditoria de Paridade e Contrato de 6 Features (Fases 15–19)
+- **Contrato congelado (`FEATURE_NAMES`):** `CpuCycles`, `TaskSizeMB`, `LatencySensitivity`, `RequiredMemoryMB`, `BandwidthMbps`, `NetworkLatencyMs`.
+- **Três bugs sutis descobertos e eliminados:**
+  1. *Dupla normalização* na política MLP (corrigida: o modelo recebe features brutas e normaliza internamente).
+  2. *Semântica de rede WAN vs LAN*: `BandwidthMbps` e `NetworkLatencyMs` no C# representam a condição da WAN usuário→Cloud do cenário (sorteada por task), não a topologia LAN do Edge. A `Task` passou a carregar seus atributos WAN nativos.
+  3. *Determinismo do split entre processos Python*: `VALID_LABELS` era um `frozenset` cuja ordem de iteração dependia de `PYTHONHASHSEED`. Corrigido com `sorted(VALID_LABELS)` e verificado com fingerprint criptográfico.
+- **Resultado da paridade:** **0 divergências em 2.250 tarefas** (`policy.predict(Task) == model.predict(X_raw)` em 100% do test set, incluindo scores contínuos e contagens das RAMs do WiSARD).
+
+### 15.2 Estudo de Seleção do WiSARD e Avaliação Única no Test Set (Fases 18–19)
+- O WiSARD padrão (codificação binária de 4 bits, sem bleaching → apenas 3 RAMs) colapsava para 99,5% Edge devido a saturação de memória e empates resolvidos pró-Edge.
+- Um estudo controlado **apenas no conjunto de validação** (`72 configurações × 5 seeds = 360 treinos`, métrica primária `macro-F1`) revelou que **bleaching** e **codificação termômetro** eliminam o colapso, selecionando `WISARD_FINAL_6` (`thermometer`, 64 bits/feature, endereço 16, `bleaching=True`, 24 RAMs).
+- **Resultado no Test Set Canônico (`n = 2.250`, aberto uma única vez):**
+
+| Modelo | Accuracy [IC 95%] | Macro-F1 [IC 95%] | Recall Cloud | Matriz de Confusão `[Cloud, Edge]` |
+|---|---:|---:|---:|---|
+| **MLP (`MLP_final_6`)** | **81,7%** `[80,2%; 83,3%]` | **0,803** `[0,787; 0,820]` | 73,0% | `[[617, 228], [183, 1222]]` |
+| **WiSARD (`WISARD_FINAL_6`)** | **74,7%** `[72,9%; 76,4%]` | **0,718** `[0,698; 0,737]` | 56,8% | `[[480, 365], [204, 1201]]` |
+| Baseline Majority (AlwaysEdge) | 62,4% | 0,384 | 0,0% | — |
+
+*(McNemar pareado: 284 acertos exclusivos do MLP vs 126 do WiSARD, $p = 4 \times 10^{-15}$).*
+
+### 15.3 Execução Cloud Lógica (`CloudExecutor`), Resolução Sub-segundo (`0,1 s`) e Disciplinas de Fila (Fases 20–24)
+- **Unidades coerentes + `CloudExecutor` (Opção B):** Rede Edge operando na unidade nativa do EdgeSimPy (`MB/tick`, `12,5 MB/s = 100 Mbps`, 12 GHz) e Cloud lógico operando com a WAN da própria Task + fila e CPU de 60 GHz no mesmo relógio.
+- **Destravamento da resolução temporal (`tick = 1,0 s → 0,1 s`):** Sob `tick = 1,0 s`, toda tarefa na fila pagava no mínimo 1 s inteiro de ocupação de servidor, mascarando a diferença entre políticas de fila. Com `tick = 0,1 s` (e banda reescalada para `1,25 MB/tick`), o tempo médio de conclusão no Cloud para tarefas escolhidas pelo MLP cai de **`6,00 s` para `0,79 s`** (violação Cloud cai de `78%` para `22%`).
+- **Arquitetura em Dois Níveis (Offloading ML + Escalonamento Local de Fila):**
+  - Testamos 5 disciplinas de fila (`FIFO`, `SJF`, `EDF`, `LLF`, `EDF_FEASIBLE`).
+  - Descobrimos que o `EDF` clássico sofre com **"tasks zumbis"** quando a rede Edge congestiona (priorizando tarefas cujo deadline já expirou durante o upload). Criamos o **`EDF_FEASIBLE`**, que aplica EDF às tarefas viáveis e rebaixa tarefas inviáveis para o fim da fila (via SJF).
+
+### 15.4 Resultado Sistêmico Multi-Workload (`10 Workloads × 20 Tasks = 200 Tasks`, `tick = 0,1 s`)
+
+| Política de Destino | Accuracy (`n=200`) | Compl. FIFO (s) | Compl. **SJF** (s) | Fila FIFO → **SJF** (s) | Viol. FIFO | Viol. **EDF_FEASIBLE** |
+|---|---:|---:|---:|---:|---:|---:|
+| AlwaysEdge | 0,500 ± 0,000 | 9,59 ± 4,43 | 9,37 ± 4,43 | 0,701 → **0,484** (-30,9%) | 66,0% ± 10,5% | **59,0% ± 8,1%** (-7,0 pp) |
+| AlwaysCloud | 0,500 ± 0,000 | 8,87 ± 6,24 | 8,81 ± 6,25 | 0,329 → **0,265** (-19,3%) | 36,0% ± 11,0% | **30,5% ± 11,2%** (-5,5 pp) |
+| RandomDestination | 0,560 ± 0,070 | 7,65 ± 5,20 | 7,58 ± 5,21 | 0,256 → **0,187** (-26,8%) | 46,5% ± 8,8% | **42,5% ± 10,1%** (-4,0 pp) |
+| Oracle (analítico) | 1,000 ± 0,000 | 6,73 ± 4,55 | 6,69 ± 4,55 | 0,205 → **0,168** (-18,0%) | 40,5% ± 8,0% | **38,5% ± 7,1%** (-2,0 pp) |
+| **MLP (`MLP_final_6`)** | **0,775 ± 0,092** | **6,46 ± 5,06** | **6,40 ± 5,09** | 0,252 → **0,191** (-24,2%) | 41,0% ± 10,5% | **36,0% ± 12,0%** (-5,0 pp) |
+| **WiSARD (`WISARD_FINAL_6`)** | **0,745 ± 0,101** | **6,81 ± 4,75** | **6,75 ± 4,77** | 0,210 → **0,149** (-29,0%) | 43,5% ± 9,4% | **41,0% ± 10,5%** (-2,5 pp) |
+
+**Mensagem-chave para a banca:**
+1. **No nível de roteamento (offloading):** `MLP` e `WiSARD` atingem desempenho sistêmico equivalente ao `Oracle` analítico e reduzem o tempo médio de conclusão em **~32% frente ao `AlwaysEdge`** e **~27% frente ao `AlwaysCloud`**, filtrando tarefas com WAN degradada para o Edge e enviando ao Cloud apenas tarefas com WAN favorável (`0,72 s` de conclusão média no Cloud para o MLP contra `8,88 s` no AlwaysCloud).
+2. **No nível de escalonamento local (fila):** `SJF` reduz o tempo de espera em fila em **18% a 31%** em todas as políticas, enquanto `EDF_FEASIBLE` incorpora o atributo `DeadlineMs` no servidor local e reduz as violações de deadline em todas as políticas sem exceção.
+

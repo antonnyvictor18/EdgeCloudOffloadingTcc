@@ -5,11 +5,16 @@
 > linha metodológica, arquitetura, nomenclatura e sequência de
 > desenvolvimento. **Não recomeçar o estudo do EdgeSimPy do zero.**
 >
-> Última atualização: 04/09/2026. Este documento substitui/consolida uma
-> versão anterior que descrevia a Fase 6 como "próxima" — a Fase 6 foi
-> concluída nesta data (ver
-> [HISTORICO_EVOLUCAO_EDGESIMPY_TCC.md, seção 24](HISTORICO_EVOLUCAO_EDGESIMPY_TCC.md)).
-> O ponto de retomada real é a **Fase 7** (NetworkFlow, Cloud, ML ou outras extensões).
+> Última atualização: 14/10/2026. Este documento consolida a evolução completa
+> do projeto até a **Fase 24** (ver
+> [HISTORICO_EVOLUCAO_EDGESIMPY_TCC.md, seções 34–43](HISTORICO_EVOLUCAO_EDGESIMPY_TCC.md)),
+> incluindo: `TaskNetworkFlow` (unidades nativas MB/tick), contrato congelado de
+> 6 features, auditoria de paridade exata (20/20 e 2250/2250) para `MLP_final_6`
+> e `WISARD_FINAL_6`, avaliação única no test set canônico (`n = 2250`),
+> execução Cloud lógica (`CloudExecutor`, opção B), resolução temporal
+> sub-segundo (`tick_duration_s = 0.1 s` com reescalonamento de banda),
+> disciplinas de fila (`FIFO`, `SJF`, `EDF`, `LLF`, `EDF_FEASIBLE`) e avaliação
+> sistêmica multi-workload (`10 workloads × 20 tasks = 200 tasks`).
 
 ## 1. Objetivo deste documento
 
@@ -432,32 +437,41 @@ Ver detalhes completos em [HISTORICO_EVOLUCAO_EDGESIMPY_TCC.md, seção 24](HIST
 
 ---
 
-## 12. Estado final para retomada
+## 12. Estado final consolidado (Fases 0 a 24 concluídas — 14/10/2026)
 
 ```text
-EdgeSimPy 1.1.0                         ✅ estudado
-Dataset sample_dataset2                ✅ validado
-FirstFit / LatencyAware / ResourceAware ✅
-Comparação isolada                      ✅
-Auditoria do provisioning               ✅
-Task / TaskStatus                       ✅
-TaskExecutor (unitário)                 ✅
-TaskExecution / TaskQueue / TaskScheduler ✅ (28/08/2026, testes A–E ok)
-Modelo de recursos (memória temp. vs
-permanente; CPU não ocupa cpu_demand)   ✅ definido e implementado
-Integração TaskScheduler ↔ EdgeSimPy     ✅ concluída (04/09/2026)
-TaskSchedulerIntegration                ✅ implementado
-Diagnóstico de integração temporal      ✅ validado
-NetworkFlow para Task                   🔵 PRÓXIMO (Fase 7)
-Offloading completo                     ⏳ depois
-Cloud                                   ⏳ depois
-Integração C# ↔ Python                  ⏳ depois
-ML (WiSARD, MLP) no EdgeSimPy           ⏳ depois
+EdgeSimPy 1.1.0 + Dataset sample_dataset2         ✅ estudado e validado
+Placement (FirstFit / LatencyAware / ResourceAware) ✅
+Task / TaskStatus / TaskExecution                 ✅
+TaskQueue (FIFO, SJF, EDF, LLF, EDF_FEASIBLE)     ✅ (Fase 5 + Fases 23–24)
+TaskScheduler + TaskSchedulerIntegration          ✅ (Fases 5–6)
+TaskNetworkFlow (unidades nativas MB/tick)        ✅ (Fase 7 + Fase 20)
+Resolução sub-segundo (tick=0.1s + banda escalada) ✅ (Fase 23)
+CloudExecutor lógico com WAN por-Task (opção B)   ✅ (Fase 21)
+Contrato congelado de 6 features (C# ↔ Python)    ✅ (Fases 11–14)
+Paridade exata MLP_final_6 (20/20 e 2250/2250)    ✅ (Fases 15–16, 19)
+Integração + Tuning WiSARD (WISARD_FINAL_6)       ✅ (Fases 17–18)
+Split canônico determinístico + Avaliação Test Set ✅ (Fase 19: MLP 81,7%, WiSARD 74,7%)
+Comparativo sistêmico de destinos (workload 20)   ✅ (Fase 22)
+Estudo fatorial Tick × Fila × Destino             ✅ (Fases 23–24)
+Avaliação sistêmica Multi-Workload (10 × 20 = 200) ✅ (Fase 24)
 ```
 
-**Ponto exato de retomada**: Fase 7 — implementar NetworkFlow para dados da
-Task, Cloud, offloading completo, ML ou outras extensões, mantendo a mesma
-metodologia de decisão → implementação → diagnóstico → validação.
+### Síntese dos resultados principais para o TCC
+
+1. **Nível Preditivo (Test Set canônico intocado, `n = 2.250`, Fase 19):**
+   - `MLP_final_6`: accuracy **81,7%** `[80,2%; 83,3%]`, macro-F1 **0,803** `[0,787; 0,820]`.
+   - `WISARD_FINAL_6` (`thermometer`, 64 bits, addr 16, `bleaching=True`): accuracy **74,7%** `[72,9%; 76,4%]`, macro-F1 **0,718** `[0,698; 0,737]` (superando o colapso all-Edge de macro-F1 `0,395` da configuração default sem bleaching).
+   - Teste pareado de McNemar: `284` acertos exclusivos do MLP vs `126` do WiSARD (`p = 4 × 10⁻¹⁵`).
+   - Paridade `policy.predict(Task) == model.predict(X_raw)`: **0 divergências em 2.250 amostras**.
+
+2. **Nível Sistêmico Multi-Workload (`10 workloads × 20 tasks = 200 tasks`, `tick = 0,1 s`, Fase 24):**
+   - **Equivalência sistêmica com o Oráculo e superação dos baselines:** `MLP` (`6,40–6,48 s` de conclusão média) e `WiSARD` (`6,75–6,81 s`) acompanham o `Oracle` analítico (`6,69–6,73 s`) e superam amplamente `AlwaysEdge` (`9,59 s`), `AlwaysCloud` (`8,87 s`) e `RandomDestination` (`7,65 s`), pois filtram tarefas de WAN lenta para o Edge e enviam ao Cloud apenas tarefas com WAN favorável (completion médio no Cloud de `0,72 s` no MLP vs `8,88 s` no AlwaysCloud).
+   - **Arquitetura em dois níveis (Offloading ML + Disciplina de Fila Local):**
+     - **`SJF`** reduz o tempo médio de fila entre **18,0% e 30,9%** em todas as políticas de destino.
+     - **`EDF_FEASIBLE`** (EDF com verificação de viabilidade e rebaixamento de "tasks zumbis" cujo deadline já expirou no upload) alcança a **menor taxa de violação de deadline em todas as 6 políticas de destino** (`MLP + EDF_FEASIBLE`: **36,0%** vs 41,0% no FIFO; no workload congelado 0: **30,0%** vs 40,0% no FIFO).
+
+**Ponto atual**: toda a infraestrutura experimental e estatística dos níveis preditivo, de decisão e sistêmico está concluída e validada, pronta para redação final do TCC e apresentação à banca.
 
 ---
 

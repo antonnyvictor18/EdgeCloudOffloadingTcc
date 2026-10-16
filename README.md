@@ -148,10 +148,17 @@ cd edgesimpy-simulation
 - `src/experimento_comparativo_destinos.py`: 6 políticas de destino (AlwaysEdge, AlwaysCloud, RandomDestination ×5 seeds, Oracle, MLP, WiSARD) no mesmo workload congelado, seleção de servidor Edge idêntica — só o destino Edge/Cloud difere. Resultados: `results/comparativo_destinos_workload.{md,json}`
 - **MLP (7,25 s / 80% viol.) e WiSARD (7,40 s / 75%) ≈ Oracle (7,80 s / 90%)** no nível sistêmico; baselines piores: AlwaysEdge 11,60 s, AlwaysCloud 13,75 s (fila Cloud serializada), Random 8,52 s. Leitura honesta: equivalência sistêmica com o oráculo analítico, não superioridade (n=20, tick de 1 s)
 
-### ⏳ Fases futuras
-- Resolução do tick (0,1 s com bandwidth reescalada) para leitura absoluta das violações de deadline
-- Workloads maiores e multi-seed para dispersão sistêmica
-- Mobilidade e experimentos de estresse
+### ✅ Fase 23 - Resolução temporal sub-segundo (`tick = 0,1 s`), políticas de fila (`FIFO`, `SJF`, `EDF`, `LLF`) e estudo fatorial (14/10/2026)
+- **Passo A (`configure_simulator_tick_resolution`)**: `tick_duration_s = 0.1 s` reescalando links para `1,25 MB/tick` (preserva vazão física `12,5 MB/s = 100 Mbps` e invariância de features). Sob `FIFO`, o tempo médio de conclusão do `MLP` cai de `7,25 s → 3,23 s` (Cloud: `6,00 s → 0,79 s`) e a violação de deadline de `80% → 40%` (Cloud: `78% → 22%`)
+- **Passo B (`TaskQueue` / `TaskScheduler` / `CloudExecutor`)**: suporte a `fifo` (default), `sjf` (menor `cpu_cycles`), `edf` (menor `deadline_time_s`, utilizando no escalonador local o `DeadlineMs` excluído das 6 features do ML) e `llf` (menor folga dinâmica). Testes em `src/test_queue_policies.py`
+- **Passo C (`src/experimento_filas_e_ticks.py`)**: estudo fatorial `2 ticks × 4 disciplinas × 6 políticas` (`results/experimento_filas_e_ticks.{md,json}`). Em `tick = 0,1 s`, **SJF** reduz o tempo médio de fila em **21–36%** para todas as políticas (`MLP + SJF`: completion `3,145 s`), enquanto **EDF/LLF** reduzem a taxa de violação de deadline em **-10 pp** nas políticas com Cloud (`MLP + EDF/LLF`: **30%** de violação vs 40% em FIFO)
+
+### ✅ Fase 24 - `EDF_FEASIBLE` (mitigação de "tasks zumbis") e Avaliação Sistêmica Multi-Workload (`10 × 20 = 200 tasks`, 14/10/2026)
+- **`edf_feasible` (`TaskQueue`)**: verifica se a tarefa ainda pode cumprir seu deadline (`current_time_s + exec <= deadline_time_s`); tarefas viáveis competem por EDF, enquanto tarefas com deadline já expirado no upload ("tasks zumbis") são rebaixadas para o fim da fila e atendidas via SJF. Em `AlwaysEdge` (`tick = 0,1 s`), derruba as violações de `65%` (EDF cego) / `60%` (FIFO) para **`50%`**
+- **Avaliação Multi-Workload (`src/experimento_multi_workload_sistemico.py`)**: `10 workloads 50/50 independentes × 20 tasks = 200 tasks` (`tick = 0,1 s`), `6 políticas × 4 disciplinas de fila = 240 simulações` (`results/experimento_multi_workload_sistemico.{md,json}`). **MLP (`6,40 ± 5,09 s`) e WiSARD (`6,75 ± 4,77 s`)** igualam o `Oracle` (`6,69 ± 4,55 s`) e reduzem o tempo médio de conclusão em **~32% vs `AlwaysEdge` (`9,59 s`)** e **~27% vs `AlwaysCloud` (`8,87 s`)**. **`SJF`** reduz a fila em **18–31%** em todas as políticas, e **`EDF_FEASIBLE`** atinge a menor taxa de violação em **todas as 6 políticas de destino** (`MLP + EDF_FEASIBLE`: **36,0% ± 12,0%** vs 41,0% em FIFO)
+
+### ⏳ Fases futuras (opcionais)
+- Mobilidade e experimentos de estresse / balanceamento multi-servidor na borda (`LeastLoaded` / `Hybrid`)
 
 ## Documentação técnica
 
@@ -187,9 +194,8 @@ cd edgesimpy-simulation
 
 ## Próximos passos recomendados
 
-1. Resolução temporal: tick de 0,1 s com bandwidth dos links reescalada (MB/tick), para que as taxas de violação de deadline tenham leitura absoluta
-2. Workloads maiores e multi-seed para dispersão sistêmica (o comparativo de destinos atual usa o workload congelado de 20 tasks)
-3. Escrever metodologia e resultados finais do TCC
+1. Redação final dos capítulos de Metodologia, Experimentos e Discussão do TCC utilizando os relatórios consolidados em `edgesimpy-simulation/results/` e `docs/HISTORICO_EVOLUCAO_EDGESIMPY_TCC.md`
+2. (Opcional) Explorar balanceamento entre múltiplos servidores Edge (`Nearest` vs `LeastLoaded` vs `Hybrid`) combinado às decisões do `MLP`/`WiSARD`
 
 ## Ambiente de desenvolvimento
 
