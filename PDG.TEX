@@ -9,6 +9,7 @@
 \usepackage{graphicx}
 \usepackage{booktabs} 
 \usepackage{tabularx} \usepackage{array}
+\usepackage{ulem}
 \usepackage{url}
 % --- Configuração para remover numeração automática das seções ---
 \setcounter{secnumdepth}{0}
@@ -23,17 +24,18 @@
 % --- Cabeçalho da Instituição ---
 \begin{center}
     \large
-    UNIVERSIDADE FEDERAL DO RIO DE JANEIRO \\
+    \textbf{UNIVERSIDADE FEDERAL DO RIO DE JANEIRO \\
     ESCOLA POLITÉCNICA \\
-    DEPARTAMENTO DE ENGENHARIA DE COMPUTAÇÃO E INFORMAÇÃO
+    DEPARTAMENTO DE ENGENHARIA\\
+    ELETRÔNICA E DE COMPUTAÇÃO}
 \end{center}
 
-\vspace{2cm}
+\vspace{0.5cm}
 
 % --- Título do Documento ---
 \begin{center}
     \Large\bfseries
-    PROPOSTA DE PROJETO DE GRADUAÇÃO
+    \uline{PROPOSTA DE PROJETO DE\\GRADUAÇÃO}
 \end{center}
 
 
@@ -41,7 +43,7 @@
 \begin{center}
 \noindent \textbf{Aluno:} Antonny Victor da Silva \\
 \textbf{E-mail:} antonny.victor.silva@poli.ufrj.br\\
-\textbf{Orientador:} Natasha Costa \\
+\textbf{Orientador:} Cláudio Miceli de Farias \\
 \textbf{Curso:} Engenharia de Computação Informação.
 \end{center}
 
@@ -61,7 +63,7 @@ tarefas computacionais (\textit{task offloading}) utilizando redes neurais sem p
 
 
 \section*{\bfseries 4. DELIMITAÇÃO}
-\textbf{O problema.} Quando um dispositivo gera uma tarefa computacional, é preciso decidir,
+Quando um dispositivo gera uma tarefa computacional, é preciso decidir,
 no momento da sua chegada, se ela será executada em um servidor de borda (\textit{Edge}),
 próximo ao usuário porém com recursos limitados, ou transferida para a nuvem (\textit{Cloud}),
 com mais capacidade porém com maior latência de rede. Essa decisão de \textit{task offloading}
@@ -71,7 +73,7 @@ latência da rede). Uma decisão inadequada aumenta o tempo de resposta e provoc
 \textit{deadline}. O escopo restringe-se à decisão binária \textit{Edge} versus \textit{Cloud},
 sem tratar mobilidade de usuários nem migração de serviços.\\
 
-\textbf{Como será resolvido.} A decisão é modelada como classificação supervisionada e
+A decisão é modelada como classificação supervisionada e
 resolvida por duas redes neurais: a rede sem peso WiSARD e o MLP. A solução é organizada em
 duas camadas: (1) um simulador analítico em C\#/.NET 10, que gera um \textit{dataset} sintético
 de 15.000 amostras, rotula cada uma com o destino de menor tempo de resposta e treina as redes
@@ -83,7 +85,7 @@ e medidas. As políticas são comparadas principalmente por métricas sistêmica
 P95/P99 e violações de \textit{deadline}), com métricas de classificação como evidência
 secundária.\\
 
-\textbf{Diferencial.} O trabalho avalia uma rede neural sem peso (WiSARD), de baixo custo de
+O trabalho avalia uma rede neural sem peso (WiSARD), de baixo custo de
 treinamento e inferência e portanto adequada a servidores de borda, comparada com o MLP e com
 políticas simples nas mesmas condições. Além disso, a avaliação não se limita à acurácia: as
 decisões são medidas em um simulador independente do modelo analítico que gerou os rótulos,
@@ -141,7 +143,7 @@ Para alcançar este objetivo geral, delimitam-se as seguintes etapas de validaç
 
 \section*{\bfseries 7. METODOLOGIA}
 
-A metodologia científica do projeto adota uma progressão estruturada e isolada de engenharia
+Este projeto científico adota uma progressão estruturada e isolada de engenharia
 e simulação, dividida em fases consecutivas e documentadas:\\
 
 \textbf{Fases Concluídas:}
