@@ -4486,3 +4486,48 @@ Implementamos `src/experimento_multi_workload_sistemico.py` (relatorio em `resul
 **Status:** **CONCLUIDO.**
 
 
+
+---
+
+## 43. Fase 25 — Figuras finais e consolidacao do artigo do TCC
+
+### Contexto e objetivo
+
+Com todas as fases experimentais concluidas (Fases 1-24: pipeline de dados, paridade, tuning WiSARD, test set canonico, executor Cloud, resolucao de tick, disciplinas de fila, avaliacao multi-workload), faltava consolidar o material em formato de publicacao: figuras em PNG para o documento final e a integracao da camada EdgeSimPy ao texto do artigo do TCC, que ate entao cobria apenas a camada analitica C#.
+
+### Implementacao
+
+**1. Geracao de figuras (`src/gerar_figuras_tcc.py`)**
+
+Novo script que le os JSONs consolidados em `results/` e produz quatro figuras em `results/figures/` com matplotlib/seaborn (bibliotecas adicionadas ao `.venv` exclusivamente para visualizacao — nao afetam nenhum pipeline de simulacao):
+
+- `fig1_preditive_metrics_test_set.png`: acuracia, macro-F1 e acuracia balanceada com barras de IC 95% no test set canonico (n = 2.250) para MLP, WiSARD e baseline Majority; anotacao do resultado de McNemar (p = 4.1 x 10^-15);
+- `fig2_confusion_matrices_test_set.png`: matrizes de confusao lado a lado de MLP_final_6 e WISARD_FINAL_6;
+- `fig3_tick_resolution_effect.png`: efeito da resolucao temporal (tick 1,0 s versus 0,1 s sob FIFO) sobre tempo medio de conclusao e taxa de violacao de deadline, por politica de destino;
+- `fig4_queue_disciplines_multiworkload.png`: painel duplo do estudo multi-workload (10 workloads x 20 tasks = 200 tasks) — (a) conclusao media FIFO versus SJF; (b) violacao de deadline sob FIFO, SJF, EDF e EDF_FEASIBLE.
+
+**2. Consolidacao do `ARTIGO_TCC_COMPLETO.md`**
+
+O artigo, que cobria apenas a camada C# (metodologia do dataset, rotulagem analitica e resultados C#), foi expandido para refletir a arquitetura completa de duas camadas, sem remover nenhum conteudo anterior:
+
+- **Titulo/escopo**: implementacao atualizada para "C#/.NET 10 (camada analitica) e Python 3 com EdgeSimPy 1.1.0 (camada de validacao)";
+- **Resumo/Abstract**: rescritos para cobrir os dois mundos e os resultados centrais de cada camada (93,37% na analitica; 81,7% [IC95] e McNemar na preditiva canonica; equivalencia sistemica ao Oracle; SJF -18~31% de fila; EDF_FEASIBLE -2~7 pp de violacoes);
+- **Introducao**: adicionada a segunda hipotese — qualidade de politica nao se mede so por fidelidade ao rotulo — e a motivacao do estudo fila x destino;
+- **Trabalhos Relacionados**: adicionadas as referencias de EdgeSimPy (Souza et al. 2023, FGCS), Liu & Layland 1973 (EDF/LLF) e Silberschatz (SJF/FIFO);
+- **Metodologia**: nova secao 5.6 "Camada de validacao em eventos discretos" descrevendo contrato de 6 features (com justificativa da ausencia de `DeadlineMs` na entrada e seu uso legitimo nas filas EDF/LLF/EDF_FEASIBLE), ciclo de vida da tarefa, modelo de rede Edge (convencao MB/tick, max-min fairness), executor Cloud logico com WAN por tarefa (circularidade parcial declarada), resolucao temporal com invariancia fisica de banda, as cinco disciplinas de fila e o desenho experimental (workload congelado + multi-workload pre-registrado);
+- **Experimentos**: secao 6.4 com os comandos de reproducao da camada EdgeSimPy;
+- **Resultados**: novas secoes 7.5 (nivel preditivo canonico com IC95, McNemar e matrizes de confusao), 7.6 (comparativo de destinos no workload congelado), 7.7 (efeito do tick com tabela 1,0 s -> 0,1 s), 7.8 (fatorial destino x fila, incluindo o fenomeno das tarefas "zumbis" e a motivacao do EDF_FEASIBLE), 7.9 (estudo multi-workload com tabela media±DP e decomposicao Edge/Cloud — inclusive o achado de que MLP/WiSARD filtram tarefas de WAN ruim e que o Oracle viola 72% dos deadlines nas tarefas que envia a Edge) e 7.10 (figuras);
+- **Limitacoes**: adicionados os pontos 6 e 7 — circularidade parcial do termo WAN da Cloud, Cloud logico fora da topologia com um servidor por vez, ausencia das penalidades de CPU/memoria Edge do modelo C#, workloads com chegadas simultaneas em t = 0, e a regra metodologica de que o test set canonico ja foi consumido;
+- **Conclusao**: rescrita integrando os quatro achados centrais (acuracia != qualidade sistemica; otimo analitico por tarefa != otimo sob concorrencia; resolucao temporal pode dominar metricas; destino e fila sao eixos ortogonais e sinergicos).
+
+**3. Atualizacao do `GUIA_DIDATICO_TCC.md`**
+
+Acrescentada nota de escopo no topo (secoes 1-14 cobrem a camada C#) e nova secao 15 explicando didaticamente a camada EdgeSimPy: tabela comparativa C# versus EdgeSimPy, pipeline de tres niveis de avaliacao, descobertas em linguagem simples (tick escondido, acuracia != sistemico, filtragem de WAN, tarefas zumbis do EDF), comandos de reproducao e direcoes futuras (chegadas estocasticas, admissao/descarte, balanceamento entre servidores Edge, Cloud paralela, mobilidade/energia).
+
+### Arquivos
+
+- **Novo**: `src/gerar_figuras_tcc.py`; `results/figures/fig1..fig4_*.png`
+- **Editados**: `ARTIGO_TCC_COMPLETO.md` (367 -> 571 linhas), `GUIA_DIDATICO_TCC.md` (+ nota de escopo, + secao 15)
+- **Fontes de dados**: `results/final_test_evaluation.json`, `results/experimento_filas_e_ticks.json`, `results/experimento_multi_workload_sistemico.json`
+
+**Status:** **CONCLUIDO.**

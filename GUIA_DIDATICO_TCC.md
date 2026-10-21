@@ -2,6 +2,8 @@
 
 Este documento explica, em linguagem direta, o que foi feito no projeto, como executar, como interpretar os resultados e quais proximos passos fazem sentido para transformar isto em um TCC mais forte.
 
+> **Nota de escopo:** as secoes 1 a 14 descrevem a camada analitica em C# (primeira metade do projeto). A **secao 15** cobre a segunda metade — a camada de validacao em eventos discretos com EdgeSimPy (Python), que ja foi implementada e concluida. Varios "proximos passos" sugeridos nas secoes 11-14 (tuning da WiSARD, repeticao com multiplas seeds, comparacao com modelos externos) ja foram realizados nessa segunda camada — ver secao 15 e `docs/HISTORICO_EVOLUCAO_EDGESIMPY_TCC.md`.
+
 ## 1. Qual e o problema?
 
 O problema estudado e o de **Task Offloading** em um ambiente **Edge-Cloud**.
@@ -461,3 +463,58 @@ E responder:
 - quais ajustes podem melhorar WiSARD.
 
 Esse notebook seria uma excelente ponte entre o codigo e o texto academico do TCC.
+
+## 15. E depois do C#? A camada de validacao EdgeSimPy (ja concluida)
+
+Tudo o que foi descrito ate aqui e a **camada 1** do projeto: o simulador analitico em C#, que gera o dataset e calcula o rotulo `BestDestination` por uma formula de tempo de resposta. Ela responde a pergunta "qual destino e melhor *no papel*?".
+
+Mas ela tem uma limitacao importante: cada amostra e avaliada **sozinha**. Na vida real, quando 20 tarefas chegam juntas, elas disputam o mesmo link de rede e a mesma CPU. O simulador analitico nao ve isso. Por isso foi construida a **camada 2**: um ambiente de simulacao de eventos discretos em Python sobre o **EdgeSimPy**, onde cada tarefa vive um ciclo completo:
+
+```text
+criacao -> decisao da politica -> upload pela rede -> fila do servidor -> execucao -> conclusao
+```
+
+### 15.1 O que a camada 2 adiciona
+
+| Conceito | Camada 1 (C# analitico) | Camada 2 (EdgeSimPy) |
+|---|---|---|
+| Rede Edge | numero na formula | topologia real com fluxos competindo por banda (100 Mbps compartilhados) |
+| Fila | numero sorteado por amostra | fila real por servidor, que cresce e esvazia ao longo do tempo |
+| Cloud | numero na formula | executor logico com WAN por tarefa (`TaskSizeMB x 8 / BandwidthMbps` + `NetworkLatencyMs`) e CPU de 60 GHz |
+| Tempo | instantaneo por amostra | avanco em ticks discretos (1,0 s ou 0,1 s) |
+| Deadline | feature | deadline absoluto verificado contra o tempo real de conclusao |
+
+### 15.2 O pipeline de validacao em tres niveis
+
+1. **Nivel preditivo**: os modelos MLP e WiSARD foram retreinados em Python sobre um contrato de 6 features (`CpuCycles`, `TaskSizeMB`, `LatencySensitivity`, `RequiredMemoryMB`, `BandwidthMbps`, `NetworkLatencyMs`) e avaliados uma unica vez num test set canonico de 2.250 amostras. Resultado: MLP 81,7% de acuracia (IC95 [80,2%; 83,3%]), WiSARD 74,7%, McNemar p = 4 x 10^-15.
+2. **Nivel de decisao**: auditoria de paridade — a politica em execucao decide identicamente ao modelo treinado (0 divergencias em 2.250 amostras). Dois bugs reais foram encontrados e corrigidos aqui: dupla normalizacao na inferencia da MLP e um split nao reprodutivel por iteracao de `frozenset`.
+3. **Nivel sistemico**: 6 politicas de destino (AlwaysEdge, AlwaysCloud, Random, Oracle analitico, MLP, WiSARD) x disciplinas de fila (FIFO, SJF, EDF, LLF, EDF_FEASIBLE) executadas de ponta a ponta no simulador, em workload congelado e em estudo multi-workload de 10 seeds x 20 tarefas = 200 tarefas.
+
+### 15.3 Descobertas principais (em linguagem direta)
+
+- **O tick de 1 segundo escondia tudo.** Com tick grosso, cada tarefa ocupa o servidor por 1 segundo inteiro mesmo que sua execucao leve 0,02 s. Filas e violacoes de deadline eram em grande parte artefato da resolucao. Com `tick = 0,1 s` (e banda reescalonada para manter a mesma taxa fisica), a violacao media caiu aproximadamente pela metade e as disciplinas de fila passaram a fazer diferenca.
+- **Acuracia nao e qualidade de sistema.** AlwaysEdge e AlwaysCloud tem a mesma acuracia (50%), mas sob execucao real AlwaysCloud e o pior cenario — 20 tarefas na fila da Cloud.
+- **Os modelos de ML aprenderam algo util de verdade:** filtrar tarefas com WAN ruim. AlwaysCloud gasta 8,9 s por tarefa na Cloud; sob MLP/WiSARD, so vao para a Cloud tarefas com WAN boa, e a conclusao media nesse destino cai para 0,7-1,0 s.
+- **Filas tem disciplina, e ela importa separadamente do offloading.** SJF reduziu o tempo medio de fila em 18-31% em todas as politicas. EDF puro falha num caso classico: tarefas que estouram o deadline durante o upload chegam "zumbis" na fila e recebem prioridade maxima, atrasando as viaveis (AlwaysEdge + EDF: 65% de violacao, pior que FIFO). A variante **EDF_FEASIBLE**, criada neste trabalho, rebaixa as inviaveis e chega a 50%.
+- **Offloading e fila interagem:** MLP + EDF alcanca 30% de violacao porque aliviar a LAN Edge torna as tarefas viaveis ao despacho.
+
+### 15.4 Como rodar a camada 2
+
+```powershell
+cd edgesimpy-simulation
+.\.venv\Scripts\python.exe src\test_queue_policies.py
+.\.venv\Scripts\python.exe src\test_task_scheduler.py
+.\.venv\Scripts\python.exe src\experimento_filas_e_ticks.py
+.\.venv\Scripts\python.exe src\experimento_multi_workload_sistemico.py
+.\.venv\Scripts\python.exe src\gerar_figuras_tcc.py
+```
+
+Resultados em `edgesimpy-simulation/results/` (Markdown + JSON) e figuras em `results/figures/`. O historico completo com justificativas esta em `docs/HISTORICO_EVOLUCAO_EDGESIMPY_TCC.md` (Fases 1-24); a versao academica consolidada esta em `ARTIGO_TCC_COMPLETO.md` (secoes 5.6, 7.5-7.10).
+
+### 15.5 O que ainda pode crescer
+
+- chegadas de tarefas distribuidas no tempo (hoje todas chegam em t = 0);
+- admissao/descarte de tarefas cujo deadline ja venceu durante o upload;
+- balanceamento entre os dois servidores Edge (hoje `Nearest` manda tudo para o mais proximo);
+- Cloud com mais de um servidor ou paralelismo controlado;
+- mobilidade de usuarios e metricas de energia.

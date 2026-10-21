@@ -157,8 +157,14 @@ cd edgesimpy-simulation
 - **`edf_feasible` (`TaskQueue`)**: verifica se a tarefa ainda pode cumprir seu deadline (`current_time_s + exec <= deadline_time_s`); tarefas viáveis competem por EDF, enquanto tarefas com deadline já expirado no upload ("tasks zumbis") são rebaixadas para o fim da fila e atendidas via SJF. Em `AlwaysEdge` (`tick = 0,1 s`), derruba as violações de `65%` (EDF cego) / `60%` (FIFO) para **`50%`**
 - **Avaliação Multi-Workload (`src/experimento_multi_workload_sistemico.py`)**: `10 workloads 50/50 independentes × 20 tasks = 200 tasks` (`tick = 0,1 s`), `6 políticas × 4 disciplinas de fila = 240 simulações` (`results/experimento_multi_workload_sistemico.{md,json}`). **MLP (`6,40 ± 5,09 s`) e WiSARD (`6,75 ± 4,77 s`)** igualam o `Oracle` (`6,69 ± 4,55 s`) e reduzem o tempo médio de conclusão em **~32% vs `AlwaysEdge` (`9,59 s`)** e **~27% vs `AlwaysCloud` (`8,87 s`)**. **`SJF`** reduz a fila em **18–31%** em todas as políticas, e **`EDF_FEASIBLE`** atinge a menor taxa de violação em **todas as 6 políticas de destino** (`MLP + EDF_FEASIBLE`: **36,0% ± 12,0%** vs 41,0% em FIFO)
 
+### ✅ Fase 25 - Figuras finais e consolidação do artigo do TCC (16/10/2026)
+- **`src/gerar_figuras_tcc.py`**: 4 figuras PNG em `results/figures/` — métricas preditivas no test set com IC95% e McNemar; matrizes de confusão MLP/WiSARD; efeito do tick `1,0 s → 0,1 s`; disciplinas de fila no estudo multi-workload (`FIFO`/`SJF`/`EDF`/`EDF_FEASIBLE`)
+- **`ARTIGO_TCC_COMPLETO.md` consolidado**: o artigo agora cobre as duas camadas — nova seção 5.6 (camada EdgeSimPy: contrato de 6 features, ciclo de vida da Task, Cloud lógico, tick, disciplinas de fila, auditoria de paridade e desenho experimental) e novas seções 7.5–7.10 (test set canônico, comparativo de destinos, efeito do tick, fatorial destino × fila com "tasks zumbis" e `EDF_FEASIBLE`, estudo multi-workload `200 tasks` com decomposição Edge/Cloud, figuras). Referências ampliadas com EdgeSimPy (FGCS 2023), Liu & Layland 1973 e Silberschatz
+- **`GUIA_DIDATICO_TCC.md`**: nota de escopo + nova seção 15 explicando a camada EdgeSimPy em linguagem didática (pipeline de 3 níveis, descobertas, reprodução, próximos passos)
+
 ### ⏳ Fases futuras (opcionais)
 - Mobilidade e experimentos de estresse / balanceamento multi-servidor na borda (`LeastLoaded` / `Hybrid`)
+- Chegadas de tasks distribuídas no tempo (hoje todas em `t = 0`), admissão/descarte de tasks inviáveis e Cloud multi-servidor
 
 ## Documentação técnica
 
@@ -194,7 +200,7 @@ cd edgesimpy-simulation
 
 ## Próximos passos recomendados
 
-1. Redação final dos capítulos de Metodologia, Experimentos e Discussão do TCC utilizando os relatórios consolidados em `edgesimpy-simulation/results/` e `docs/HISTORICO_EVOLUCAO_EDGESIMPY_TCC.md`
+1. Revisão final do `ARTIGO_TCC_COMPLETO.md` (nomes, orientador, normas da banca, inserção das figuras de `edgesimpy-simulation/results/figures/` e `Charts/` no documento final)
 2. (Opcional) Explorar balanceamento entre múltiplos servidores Edge (`Nearest` vs `LeastLoaded` vs `Hybrid`) combinado às decisões do `MLP`/`WiSARD`
 
 ## Ambiente de desenvolvimento
