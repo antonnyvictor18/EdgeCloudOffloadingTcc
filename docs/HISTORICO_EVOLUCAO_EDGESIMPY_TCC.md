@@ -4531,3 +4531,13 @@ Acrescentada nota de escopo no topo (secoes 1-14 cobrem a camada C#) e nova seca
 - **Fontes de dados**: `results/final_test_evaluation.json`, `results/experimento_filas_e_ticks.json`, `results/experimento_multi_workload_sistemico.json`
 
 **Status:** **CONCLUIDO.**
+
+### Atualizacao editorial (20/10/2026) — reenquadramento narrativo do artigo
+
+Decisao tomada em conjunto com o autor: manter a camada C# no artigo, mas reenquadrar sua avaliacao como **preliminar**, antecedendo a camada EdgeSimPy como a avaliacao definitiva e mais robusta. Mudancas em `ARTIGO_TCC_COMPLETO.md`:
+
+- Abertura da Secao 7 agora explicita a estrutura em duas partes: Secoes 7.1-7.4 = avaliacao preliminar na camada analitica (mundo fechado); Secoes 7.5-7.11 = avaliacao na camada de validacao;
+- Secao 7.1 renomeada para "Resultados preliminares na camada analitica (mundo fechado)" com paragrafo de leitura obrigatoria explicando o **vazamento de features**: 5 das 12 variaveis do vetor C# (`EdgeCpuUsagePercent`, `EdgeMemoryUsagePercent`, `EdgeQueueSize`, `CloudCpuUsagePercent`, `CloudQueueSize`) sao entradas diretas da formula do rotulo — os numeros da Tabela 1 sao limites superiores, nao desempenho de politica implantavel;
+- Nova Secao 7.5 "Das limitacoes da camada analitica a validacao sistemica" lista as quatro lacunas que a camada EdgeSimPy fecha: vazamento de features, amostras avaliadas isoladamente, protocolo estatistico fraco e ausencia de metricas sistemicas;
+- Resumo e Abstract agora qualificam os 93,37%/90,89% da MLP analitica como resultado preliminar do mundo fechado;
+- Secoes 7.5-7.10 anteriores renumeradas para 7.6-7.11; referencias cruzadas atualizadas.

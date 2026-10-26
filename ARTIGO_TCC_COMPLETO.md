@@ -28,13 +28,13 @@ A avaliacao e organizada em **duas camadas complementares**: (i) um **simulador 
 
 ### Resumo
 
-Aplicacoes modernas de Internet das Coisas, sistemas moveis, cidades inteligentes e servicos interativos frequentemente exigem baixo tempo de resposta. Nesse contexto, a computacao em borda surge como uma alternativa a computacao em nuvem centralizada, pois aproxima recursos computacionais do usuario. Entretanto, nem toda tarefa deve ser executada na Edge: algumas podem se beneficiar da maior capacidade de processamento da Cloud, apesar do custo de transmissao e da latencia de rede. Este trabalho implementa e avalia um ambiente experimental de duas camadas para comparar estrategias de decisao de task offloading. A primeira camada e um simulador analitico em C#/.NET 10 que gera um dataset sintetico de 15.000 amostras, rotula cada amostra pelo menor tempo total de resposta e avalia cinco estrategias: decisao aleatoria, regra fixa, heuristica ponderada, WiSARD e MLP. A segunda camada reimplementa as politicas neurais em Python e executa as decisoes no simulador de eventos discretos EdgeSimPy, com topologia de rede real, transmissao por fluxos, filas por servidor e um executor de Cloud logico. Na camada analitica, a MLP obteve o melhor desempenho geral, com acuracia de 93,37% e F1 Score de 90,89%. Na camada de validacao, sobre o conjunto de teste canonico de 2.250 amostras com contrato de seis features, a MLP alcancou acuracia de 81,7% [IC95: 80,2%; 83,3%] e macro-F1 de 0,803, superando a WiSARD ajustada (74,7%, macro-F1 0,718) com diferenca estatisticamente significativa (McNemar, p = 4 x 10^-15). Na avaliacao sistemica multi-workload (10 workloads de 20 tarefas, 200 tarefas, resolucao temporal de 0,1 s), MLP e WiSARD apresentaram desempenho sistemico equivalente ao rotulo analitico do oraculo (tempo medio de conclusao de 6,46 s e 6,81 s contra 6,73 s), e as disciplinas de fila mostraram efeito ortogonal ao do offloading: SJF reduziu o tempo medio de fila em ate 31% e a variante EDF_FEASIBLE reduziu a taxa de violacao de deadline em ate 7 pontos percentuais. Conclui-se que (i) modelos de aprendizado reproduzem a decisao analitica com boa fidelidade, (ii) acuracia de classificacao nao se traduz linearmente em qualidade sistemica, e (iii) a separacao entre decisao de destino e escalonamento local de fila e um eixo de otimizacao relevante e independente.
+Aplicacoes modernas de Internet das Coisas, sistemas moveis, cidades inteligentes e servicos interativos frequentemente exigem baixo tempo de resposta. Nesse contexto, a computacao em borda surge como uma alternativa a computacao em nuvem centralizada, pois aproxima recursos computacionais do usuario. Entretanto, nem toda tarefa deve ser executada na Edge: algumas podem se beneficiar da maior capacidade de processamento da Cloud, apesar do custo de transmissao e da latencia de rede. Este trabalho implementa e avalia um ambiente experimental de duas camadas para comparar estrategias de decisao de task offloading. A primeira camada e um simulador analitico em C#/.NET 10 que gera um dataset sintetico de 15.000 amostras, rotula cada amostra pelo menor tempo total de resposta e avalia cinco estrategias: decisao aleatoria, regra fixa, heuristica ponderada, WiSARD e MLP. A segunda camada reimplementa as politicas neurais em Python e executa as decisoes no simulador de eventos discretos EdgeSimPy, com topologia de rede real, transmissao por fluxos, filas por servidor e um executor de Cloud logico. Na camada analitica, a MLP obteve o melhor desempenho geral, com acuracia de 93,37% e F1 Score de 90,89% — resultado preliminar do mundo analitico fechado, cujas limitacoes (vazamento parcial de features de estado e protocolo de avaliacao simples) motivam a segunda camada. Na camada de validacao, sobre o conjunto de teste canonico de 2.250 amostras com contrato de seis features, a MLP alcancou acuracia de 81,7% [IC95: 80,2%; 83,3%] e macro-F1 de 0,803, superando a WiSARD ajustada (74,7%, macro-F1 0,718) com diferenca estatisticamente significativa (McNemar, p = 4 x 10^-15). Na avaliacao sistemica multi-workload (10 workloads de 20 tarefas, 200 tarefas, resolucao temporal de 0,1 s), MLP e WiSARD apresentaram desempenho sistemico equivalente ao rotulo analitico do oraculo (tempo medio de conclusao de 6,46 s e 6,81 s contra 6,73 s), e as disciplinas de fila mostraram efeito ortogonal ao do offloading: SJF reduziu o tempo medio de fila em ate 31% e a variante EDF_FEASIBLE reduziu a taxa de violacao de deadline em ate 7 pontos percentuais. Conclui-se que (i) modelos de aprendizado reproduzem a decisao analitica com boa fidelidade, (ii) acuracia de classificacao nao se traduz linearmente em qualidade sistemica, e (iii) a separacao entre decisao de destino e escalonamento local de fila e um eixo de otimizacao relevante e independente.
 
 **Palavras-chave:** Edge Computing; Cloud Computing; Task Offloading; WiSARD; MLP; simulacao de eventos discretos; EdgeSimPy; escalonamento de filas; aprendizado de maquina.
 
 ### Abstract
 
-Modern Internet of Things, mobile, smart city and interactive applications often require low response time. In this context, edge computing appears as an alternative to centralized cloud computing because it brings computational resources closer to the user. However, not every task should be executed at the edge: some tasks may benefit from the higher processing capacity of the cloud, despite transmission cost and network latency. This work implements and evaluates a two-layer experimental environment to compare task offloading decision strategies. The first layer is an analytical simulator in C#/.NET 10 that generates a 15,000-sample synthetic dataset, labels each sample by the lowest total response time and evaluates five strategies: random decision, fixed rule, weighted heuristic, WiSARD and MLP. The second layer reimplements the neural policies in Python and executes their decisions on the EdgeSimPy discrete-event simulator, with real network topology, flow-based transmission, per-server queues and a logical Cloud executor. In the analytical layer, the MLP achieved the best overall performance, with 93.37% accuracy and 90.89% F1 Score. In the validation layer, on the canonical 2,250-sample test set with a six-feature contract, the MLP reached 81.7% accuracy [95% CI: 80.2%; 83.3%] and 0.803 macro-F1, outperforming the tuned WiSARD (74.7%, 0.718 macro-F1) with statistical significance (McNemar, p = 4 x 10^-15). In the multi-workload systemic evaluation (10 workloads of 20 tasks, 200 tasks, 0.1 s tick resolution), MLP and WiSARD achieved systemic performance equivalent to the analytical oracle label (mean completion times of 6.46 s and 6.81 s versus 6.73 s), and queue disciplines showed an effect orthogonal to offloading: SJF reduced mean queue time by up to 31% and the EDF_FEASIBLE variant reduced the deadline violation rate by up to 7 percentage points. We conclude that (i) learning models reproduce the analytical decision with good fidelity, (ii) classification accuracy does not translate linearly into systemic quality, and (iii) separating destination decision from local queue scheduling is a relevant and independent optimization axis.
+Modern Internet of Things, mobile, smart city and interactive applications often require low response time. In this context, edge computing appears as an alternative to centralized cloud computing because it brings computational resources closer to the user. However, not every task should be executed at the edge: some tasks may benefit from the higher processing capacity of the cloud, despite transmission cost and network latency. This work implements and evaluates a two-layer experimental environment to compare task offloading decision strategies. The first layer is an analytical simulator in C#/.NET 10 that generates a 15,000-sample synthetic dataset, labels each sample by the lowest total response time and evaluates five strategies: random decision, fixed rule, weighted heuristic, WiSARD and MLP. The second layer reimplements the neural policies in Python and executes their decisions on the EdgeSimPy discrete-event simulator, with real network topology, flow-based transmission, per-server queues and a logical Cloud executor. In the analytical layer, the MLP achieved the best overall performance, with 93.37% accuracy and 90.89% F1 Score — a preliminary closed-world result whose limitations (partial leakage of server-state features and a simple evaluation protocol) motivate the second layer. In the validation layer, on the canonical 2,250-sample test set with a six-feature contract, the MLP reached 81.7% accuracy [95% CI: 80.2%; 83.3%] and 0.803 macro-F1, outperforming the tuned WiSARD (74.7%, 0.718 macro-F1) with statistical significance (McNemar, p = 4 x 10^-15). In the multi-workload systemic evaluation (10 workloads of 20 tasks, 200 tasks, 0.1 s tick resolution), MLP and WiSARD achieved systemic performance equivalent to the analytical oracle label (mean completion times of 6.46 s and 6.81 s versus 6.73 s), and queue disciplines showed an effect orthogonal to offloading: SJF reduced mean queue time by up to 31% and the EDF_FEASIBLE variant reduced the deadline violation rate by up to 7 percentage points. We conclude that (i) learning models reproduce the analytical decision with good fidelity, (ii) classification accuracy does not translate linearly into systemic quality, and (iii) separating destination decision from local queue scheduling is a relevant and independent optimization axis.
 
 **Keywords:** Edge Computing; Cloud Computing; Task Offloading; WiSARD; MLP; discrete-event simulation; EdgeSimPy; queue scheduling; machine learning.
 
@@ -313,7 +313,9 @@ Os resultados sao persistidos em `results/` em formato Markdown e JSON (`final_t
 
 ## 7. Resultados e Discussoes
 
-### 7.1 Resultados quantitativos
+Os resultados sao apresentados em duas partes, espelhando a arquitetura do trabalho e sua evolucao metodologica. As Secoes 7.1 a 7.4 reportam a **avaliacao preliminar na camada analitica C#** — o mundo fechado no qual o dataset e os rotulos foram gerados — acompanhada de uma discussao explicita de suas limitacoes. As Secoes 7.5 a 7.11 apresentam a **avaliacao na camada de validacao EdgeSimPy**, metodologicamente mais robusta: contrato de features restrito as variaveis causais e observaveis, split canonico versionado, tuning restrito ao conjunto de validacao, test set consumido uma unica vez, paridade politica-modelo auditada, testes estatisticos e metricas sistemicas sob simulacao de eventos discretos.
+
+### 7.1 Resultados preliminares na camada analitica (mundo fechado)
 
 A Tabela 1 apresenta os resultados obtidos na execucao com 15.000 amostras.
 
@@ -327,6 +329,8 @@ A Tabela 1 apresenta os resultados obtidos na execucao com 15.000 amostras.
 | WiSARD | 0,6300 | 0,8000 | 0,0213 | 0,0415 | 1,4795 | 4,4386 | 11,1719 | 1197,4995 | 717,2687 |
 | MLP | 0,9337 | 0,9395 | 0,8803 | 0,9089 | 1,8355 | 5,5065 | 1,9766 | 953,1723 | 317,5206 |
 
+**Leitura obrigatoria da Tabela 1.** Esses numeros foram produzidos dentro do mundo analitico fechado e devem ser lidos como **limites superiores**, nao como o desempenho de uma politica implantavel. Tres razoes: (i) o vetor de features usado nesta camada contem 12 variaveis, das quais cinco — `EdgeCpuUsagePercent`, `EdgeMemoryUsagePercent`, `EdgeQueueSize`, `CloudCpuUsagePercent` e `CloudQueueSize` — sao **entradas diretas da formula que gera o rotulo** `BestDestination`, permitindo que o classificador recompute parcialmente a funcao-alvo em vez de aprender uma regra de decisao (vazamento de features); (ii) a avaliacao usa um unico split 12.000/3.000, sem conjunto de validacao e sem repeticao com outras seeds; e (iii) a WiSARD nao passou por ajuste de hiperparametros. A avaliacao definitiva, com contrato de features observaveis e protocolo estatistico completo, esta nas Secoes 7.5-7.11.
+
 ### 7.2 Discussao dos resultados
 
 A estrategia aleatoria obteve acuracia de 50,80%, como esperado para uma decisao sem aprendizado em um problema binario. Esse resultado serve como referencia minima.
@@ -335,7 +339,7 @@ A regra fixa obteve acuracia de 57,00% e F1 Score de 54,42%. Embora tenha supera
 
 A heuristica simples apresentou melhora consideravel, com acuracia de 71,23% e F1 Score de 63,26%. Esse resultado era esperado, pois a heuristica considera mais variaveis que a regra fixa, como latencia, banda e filas. No entanto, seus pesos foram definidos manualmente, o que limita sua capacidade de adaptacao.
 
-A WiSARD obteve acuracia de 63,00%, mas F1 Score de apenas 4,15%. A matriz de confusao mostra que o modelo praticamente nao identificou corretamente exemplos da classe Cloud. Mesmo assim, sua latencia media escolhida foi de 1.197,50 ms, proxima da MLP e muito melhor que as estrategias tradicionais. Esse comportamento sugere que a WiSARD ficou enviesada para a classe Edge, que e majoritaria no dataset. Como muitas decisoes otimas sao Edge, isso reduz a latencia media, mas prejudica fortemente a classificacao da classe Cloud. Esse resultado motivou o tuning dedicado da WiSARD na camada de validacao (Secao 7.5), no qual codificacao termometrica e bleaching elevaram seu desempenho de forma substancial.
+A WiSARD obteve acuracia de 63,00%, mas F1 Score de apenas 4,15%. A matriz de confusao mostra que o modelo praticamente nao identificou corretamente exemplos da classe Cloud. Mesmo assim, sua latencia media escolhida foi de 1.197,50 ms, proxima da MLP e muito melhor que as estrategias tradicionais. Esse comportamento sugere que a WiSARD ficou enviesada para a classe Edge, que e majoritaria no dataset. Como muitas decisoes otimas sao Edge, isso reduz a latencia media, mas prejudica fortemente a classificacao da classe Cloud. Esse resultado motivou o tuning dedicado da WiSARD na camada de validacao (Secao 7.6), no qual codificacao termometrica e bleaching elevaram seu desempenho de forma substancial.
 
 A MLP apresentou o melhor resultado geral, com acuracia de 93,37%, precisao de 93,95%, recall de 88,03% e F1 Score de 90,89%. Alem disso, obteve a menor latencia media escolhida, 953,17 ms, e a menor perda media quando errou, 317,52 ms. Esses resultados apoiam a hipotese do trabalho: no ambiente simulado, um modelo neural treinado conseguiu aproximar melhor a decisao otima de offloading que as estrategias tradicionais.
 
@@ -359,7 +363,7 @@ A MLP apresentou equilibrio razoavel entre as classes. O modelo errou 64 tarefas
 | Edge | 1866 | 6 |
 | Cloud | 1104 | 24 |
 
-A WiSARD quase sempre escolheu Edge. Por isso, teve muitos acertos na classe majoritaria, mas falhou em reconhecer a classe Cloud. Esse resultado mostra que, para este problema, a implementacao didatica original da WiSARD precisava de ajustes — balanceamento de classes, bleaching, mais bits por feature e codificacao termometrica — que foram de fato aplicados na camada de validacao (Secao 7.5).
+A WiSARD quase sempre escolheu Edge. Por isso, teve muitos acertos na classe majoritaria, mas falhou em reconhecer a classe Cloud. Esse resultado mostra que, para este problema, a implementacao didatica original da WiSARD precisava de ajustes — balanceamento de classes, bleaching, mais bits por feature e codificacao termometrica — que foram de fato aplicados na camada de validacao (Secao 7.6).
 
 ### 7.4 Graficos gerados
 
@@ -374,7 +378,16 @@ O projeto gerou graficos automaticamente em `Charts/`. Os principais sao:
 
 Para uma versao final do TCC em PDF, recomenda-se inserir esses graficos como figuras numeradas.
 
-### 7.5 Nivel preditivo na camada de validacao (test set canonico)
+### 7.5 Das limitacoes da camada analitica a validacao sistemica
+
+A avaliacao preliminar deixa quatro lacunas que a camada de validacao foi construida para fechar:
+
+1. **Vazamento de features.** Cinco das doze variaveis de entrada da camada analitica sao argumentos da propria formula do rotulo. Na camada EdgeSimPy, o contrato e restrito as seis features causais *e* observaveis no instante da decisao (`CpuCycles`, `TaskSizeMB`, `LatencySensitivity`, `RequiredMemoryMB`, `BandwidthMbps`, `NetworkLatencyMs`): as cinco variaveis de estado de servidor nao possuem equivalente como atributo da `Task` no runtime simulado e, em um sistema real, seriam no maximo estimativas defasadas — o estado interno da fila da Cloud sequer e exposto ao cliente.
+2. **Amostras avaliadas isoladamente.** No modelo analitico, cada tarefa e avaliada sozinha; nao ha contencao de banda, filas emergentes nem competicao por CPU. Na camada de validacao, ate 20 tarefas disputam simultaneamente a LAN de 100 Mbps, a CPU Edge de 12 GHz e a Cloud logica de 60 GHz.
+3. **Protocolo estatistico fraco.** O split unico e a execucao unica da camada analitica sao substituidos por split canonico versionado, tuning exclusivo no conjunto de validacao, test set consumido uma unica vez, teste pareado de McNemar, intervalos de confianca de 95% e estudo multi-workload com 10 seeds pre-registradas.
+4. **Ausencia de metricas sistemicas.** A camada analitica mede fidelidade ao rotulo; a camada de validacao mede tempo de transmissao, tempo de fila, tempo de conclusao e violacao de deadline — inclusive sob disciplinas de escalonamento distintas (FIFO, SJF, EDF, LLF, EDF_FEASIBLE), separando a decisao de destino da decisao de ordem local.
+
+### 7.6 Nivel preditivo na camada de validacao (test set canonico)
 
 Apos o tuning restrito ao conjunto de validacao, a avaliacao final foi executada uma unica vez sobre o test set canonico de 2.250 amostras, com paridade exata entre `policy.predict(Task)` e `model.predict(features)` (0 divergencias em 2.250 amostras para ambos os modelos).
 
@@ -399,7 +412,7 @@ As matrizes de confusao no test set (Tabela 5) mostram o padrao de erro de cada 
 
 A diferenca entre a acuracia da MLP na camada analitica (93,37%) e na camada de validacao (81,7%) decorre de dois fatores declarados: (i) os experimentos usam vetores de features distintos — a avaliacao C# opera sobre o vetor completo do simulador, enquanto o contrato Python e restrito as seis features exportadas; e (ii) trata-se de pipelines de treinamento independentes (implementacao C# didatica versus reimplementacao Python). Os dois numeros sao reportados separadamente e nao sao diretamente comparaveis.
 
-### 7.6 Nivel de decisao: comparativo de politicas de destino
+### 7.7 Nivel de decisao: comparativo de politicas de destino
 
 Seis politicas de destino foram executadas sobre o mesmo workload congelado de 20 tarefas e o mesmo motor de execucao (Edge via NetworkFlow e CPU 12 GHz; Cloud via executor logico e CPU 60 GHz), com selecao de servidor Edge identica — apenas a decisao Edge/Cloud varia.
 
@@ -416,7 +429,7 @@ Seis politicas de destino foram executadas sobre o mesmo workload congelado de 2
 
 Dois achados se destacam. Primeiro, **acuracia nao equivale a qualidade sistemica**: AlwaysEdge e AlwaysCloud tem a mesma acuracia (0,500), mas AlwaysCloud e o pior resultado sistemico — vinte chegadas simultaneas na fila serializada da Cloud pagam um tick inteiro cada. Segundo, MLP e WiSARD atingem desempenho sistemico nominalmente **equivalente (e ate marginalmente superior) ao Oracle analitico**: o rotulo e otimo por tarefa isolada, mas sob 20 tarefas concorrentes as filas emergentes tornam o otimo local sub-otimo no agregado. Com n = 20 e tick de 1 s, a diferenca de ~0,5 s esta dentro do ruido; a leitura defensavel e de equivalencia, nao de superioridade.
 
-### 7.7 Efeito da resolucao temporal
+### 7.8 Efeito da resolucao temporal
 
 A Figura 3 (`results/figures/fig3_tick_resolution_effect.png`) compara tick de 1,0 s versus 0,1 s sob FIFO no workload congelado. A reducao da granularidade preserva a taxa fisica da rede (reescalonamento MB/tick) mas elimina o pedagio artificial de um segundo inteiro por tarefa na fila:
 
@@ -431,7 +444,7 @@ A Figura 3 (`results/figures/fig3_tick_resolution_effect.png`) compara tick de 1
 
 No caso da MLP, o tempo medio de conclusao das tarefas Cloud caiu de 6,00 s para 0,79 s (fila Cloud: 4,00 s -> 0,43 s). A consequencia metodologica e relevante: sob tick grosso, FIFO, SJF, EDF e LLF produzem metricas identicas, pois toda tarefa ocupa o servidor por um tick inteiro — a resolucao fina e **pre-requisito** para qualquer estudo de disciplina de fila.
 
-### 7.8 Arquitetura de dois niveis: destino x disciplina de fila
+### 7.9 Arquitetura de dois niveis: destino x disciplina de fila
 
 O estudo fatorial (`6 politicas de destino x 5 disciplinas de fila x 2 resolucoes`) no workload congelado, sob tick de 0,1 s, mostra o efeito ortogonal do escalonamento local:
 
@@ -447,7 +460,7 @@ O estudo fatorial (`6 politicas de destino x 5 disciplinas de fila x 2 resolucoe
 
 O fenomeno AlwaysEdge + EDF e um resultado classico de sistemas: quando todas as 20 tarefas dividem a LAN de 100 Mbps, varias chegam a fila de CPU **com o deadline ja estourado durante o upload**. O EDF puro concede a essas tarefas "zumbis" a prioridade maxima (menor deadline absoluto), atrasando tarefas ainda viaveis — e a violacao sobe de 60% (FIFO) para 65%. A variante **EDF_FEASIBLE**, proposta neste trabalho, rebaixa as inviaveis e reduz a violacao para **50%**, superando inclusive o FIFO. O efeito desaparece quando a politica de destino divide a carga com a Cloud: MLP + EDF atinge 30% de violacao porque a descompressao da LAN torna quase todas as tarefas viaveis ao despacho — evidencia concreta de **sinergia entre decisao de offloading e disciplina de fila**.
 
-### 7.9 Avaliacao sistemica multi-workload
+### 7.10 Avaliacao sistemica multi-workload
 
 Para robustez estatistica, 10 workloads independentes de 20 tarefas (200 tarefas por configuracao, seeds pre-registradas, tick = 0,1 s) foram executados cruzando seis politicas de destino com quatro disciplinas de fila (FIFO, SJF, EDF, EDF_FEASIBLE) — 240 simulacoes completas.
 
@@ -478,7 +491,7 @@ A decomposicao por destino (Tabela 9) revela o mecanismo pelo qual os modelos de
 
 Note que as tarefas destinadas a Edge pelo Oracle violam 72% dos deadlines — mais que sob MLP (59,7%) — porque o rotulo analitico prioriza o menor tempo de resposta, nao o cumprimento de prazo, e envia para a Edge tarefas grandes com deadline curto quando a WAN esta ruim.
 
-### 7.10 Figuras da camada de validacao
+### 7.11 Figuras da camada de validacao
 
 Quatro figuras consolidam os resultados da camada EdgeSimPy (geradas por `src/gerar_figuras_tcc.py` em `results/figures/`):
 

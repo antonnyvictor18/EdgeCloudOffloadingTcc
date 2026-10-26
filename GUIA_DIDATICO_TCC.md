@@ -509,7 +509,7 @@ cd edgesimpy-simulation
 .\.venv\Scripts\python.exe src\gerar_figuras_tcc.py
 ```
 
-Resultados em `edgesimpy-simulation/results/` (Markdown + JSON) e figuras em `results/figures/`. O historico completo com justificativas esta em `docs/HISTORICO_EVOLUCAO_EDGESIMPY_TCC.md` (Fases 1-24); a versao academica consolidada esta em `ARTIGO_TCC_COMPLETO.md` (secoes 5.6, 7.5-7.10).
+Resultados em `edgesimpy-simulation/results/` (Markdown + JSON) e figuras em `results/figures/`. O historico completo com justificativas esta em `docs/HISTORICO_EVOLUCAO_EDGESIMPY_TCC.md` (Fases 1-24); a versao academica consolidada esta em `ARTIGO_TCC_COMPLETO.md` (secoes 5.6 e 7.5-7.11; as secoes 7.1-7.4 cobrem a avaliacao preliminar da camada C#, com as limitacoes explicitadas na secao 7.5).
 
 ### 15.5 O que ainda pode crescer
 
