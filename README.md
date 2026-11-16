@@ -1,216 +1,233 @@
-# EdgeCloudOffloadingTcc
+# Edge/Cloud Task Offloading with Neural Networks
 
-Projeto acadêmico de TCC para comparação de estratégias de decisão de task offloading em ambientes Edge-Cloud, combinando simulação analítica em C#/.NET 10 e validação independente com EdgeSimPy 1.1.0.
+**Learning where to run a computation — on a nearby Edge server or in the Cloud — with a
+from-scratch MLP and a Weightless Neural Network (WiSARD), validated end-to-end in a
+discrete-event simulator (EdgeSimPy).**
 
-## Visão geral do projeto
+> Undergraduate thesis (TCC) project. Documentation of the thesis itself is in Portuguese
+> (`docs/tcc/`); this README is the technical overview. *Resumo em PT-BR no final.*
 
-Este projeto possui duas camadas complementares que não devem ser mescladas:
+![MLP vs WiSARD vs majority baseline on the held-out test set](edgesimpy-simulation/results/figures/fig1_preditive_metrics_test_set.png)
 
-### Camada C# (Simulador Analítico)
-- Gerador de dataset sintético com 15.000 amostras
-- Simulador analítico Edge-Cloud com modelo de latência
-- Cinco estratégias de decisão: Random, Fixed Rule, Heuristic, WiSARD, MLP
-- Avaliação de métricas de classificação e desempenho
-- Geração automática de gráficos e relatórios
+---
 
-### Camada Python (EdgeSimPy)
-- EdgeSimPy 1.1.0 como ambiente de simulação de infraestrutura
-- Modelo de Task independente com ciclo de vida temporal completo
-- Políticas de placement: FirstFit, LatencyAware, ResourceAware
-- TaskScheduler com filas FIFO por EdgeServer
-- Validação independente das decisões de offloading
+## TL;DR
 
-**Arquitetura proposta:** C# (dataset/políticas) → contrato CSV/JSON → EdgeSimPy (simulação realista) → resultados sistêmicos
+| | |
+|---|---|
+| **Problem** | Binary decision per task (`Edge` vs `Cloud`) to minimise response time and deadline misses under compute/network constraints. |
+| **Models** | Multi-Layer Perceptron and WiSARD weightless neural network, **both implemented from scratch** (NumPy in Python, pure C# with zero NuGet dependencies). |
+| **Data** | 15,000 synthetic tasks, stratified 70/15/15 train/validation/test split, fixed seeds. |
+| **Predictive result** (held-out test, n = 2,250) | MLP **0.817 accuracy / 0.803 macro-F1** · WiSARD 0.747 / 0.718 · majority baseline 0.624 / 0.384. MLP > WiSARD, exact McNemar *p* = 4·10⁻¹⁵. |
+| **System-level result** (EdgeSimPy, 10 workloads × 20 tasks) | MLP mean completion time **6.40 s**, matching the analytical oracle (6.69 s) and **~32 % faster than Always-Edge** / ~27 % faster than Always-Cloud. |
+| **Engineering** | Train/serve parity verified on all 2,250 test samples (0 mismatches), leakage-aware feature contract, pre-registered model selection, 95 % bootstrap CIs. |
 
-## Como executar
+---
 
-### C# (Simulador Analítico)
+## Why this project is interesting
 
-Instale o .NET 10 SDK e execute:
+Most offloading papers stop at *classifier accuracy*. This project treats the model as a
+**decision policy inside a running system** and asks the harder question: *does a better
+classifier actually produce a better system?*
 
-```bash
-dotnet build EdgeCloudOffloadingTcc.csproj
-dotnet run --project EdgeCloudOffloadingTcc.csproj
+To answer it honestly the project is split into three independent stages, so that the formula
+that generates the labels is never the same thing that grades the policy:
+
+```
+ (A) Label generation           (B) Model training               (C) Independent evaluation
+ ─────────────────────          ─────────────────────            ──────────────────────────
+ C# analytical latency   ──►    MLP / WiSARD on a 6-feature ──►  EdgeSimPy discrete-event
+ model → BestDestination        causal contract (Python)         simulation: queues, network
+ (15k synthetic tasks)          frozen artifacts (.npz/.json)    flows, ticks, deadlines
 ```
 
-Para gerar um número específico de amostras:
+---
 
-```bash
-dotnet run --project EdgeCloudOffloadingTcc.csproj 20000
+## Machine-learning highlights
+
+### 1. Neural networks implemented from first principles
+No scikit-learn / PyTorch for the models — every component is written and tested by hand, in two
+languages, and cross-checked for numerical parity.
+
+**MLP** — [`edgesimpy-simulation/src/ml/mlp_model.py`](edgesimpy-simulation/src/ml/mlp_model.py) ·
+[`Strategies/Mlp/MlpStrategy.cs`](Strategies/Mlp/MlpStrategy.cs)
+- 6 → 18 → 1 architecture, sigmoid activations, binary cross-entropy gradient (`output − y`).
+- Manual **backpropagation** with online SGD (lr 0.04, 35 epochs, per-epoch shuffling).
+- **Xavier/Glorot** initialisation, numerically stable sigmoid (clamped logits).
+- Min-max normalisation **fitted on the training split only**; parameters serialised with the
+  weights so the deployed policy reproduces training-time preprocessing exactly.
+
+**WiSARD (Weightless Neural Network)** — [`edgesimpy-simulation/src/ml/wisard_model.py`](edgesimpy-simulation/src/ml/wisard_model.py) ·
+[`Strategies/Wisard/WisardStrategy.cs`](Strategies/Wisard/WisardStrategy.cs)
+- RAM-based discriminators (one per class) with a seeded random input-to-RAM mapping.
+- **Thermometer vs. binary encoding**: diagnosed that positional binary codes break the address
+  locality WiSARD needs to generalise (`0111` vs `1000`); thermometer coding fixed it.
+- **Bleaching** (count-based RAMs with an increasing activation threshold) to resolve ties.
+- Fully vectorised scoring in NumPy.
+
+### 2. Rigorous, leakage-aware ML methodology
+- **Feature contract with an explicit forbidden list**
+  ([`ml/dataset.py`](edgesimpy-simulation/src/ml/dataset.py)): any field computed *after* the
+  decision (execution times, completion/queue times, the label itself) is rejected at load time.
+- **Causal feature selection**: the original feature set leaked simulator state and included a
+  non-causal `DeadlineMs`. A formula audit
+  ([`auditoria_formula_analitica.md`](edgesimpy-simulation/results/auditoria_formula_analitica.md))
+  led to a 6-feature set observable in EdgeSimPy at decision time
+  (`CpuCycles, TaskSizeMB, LatencySensitivity, RequiredMemoryMB, BandwidthMbps, NetworkLatencyMs`),
+  which *raised* test accuracy from ~0.73 to ~0.82.
+- **Proper train / validation / test discipline**: all tuning on validation; the test split was
+  opened exactly once for the final report
+  ([`final_test_evaluation.md`](edgesimpy-simulation/results/final_test_evaluation.md)).
+- **Pre-registered hyperparameter search for WiSARD**: 72 configurations × 5 mapping seeds = 360
+  trainings, selected by macro-F1 (accuracy is misleading under the 62/38 class prior) —
+  macro-F1 **0.395 → 0.738**, tie rate 82 % → 0 %
+  ([`wisard_tuning.md`](edgesimpy-simulation/results/wisard_tuning.md)).
+- **Statistics, not single numbers**: percentile-bootstrap 95 % CIs (2,000 resamples), exact
+  McNemar test for paired model comparison, seed-sensitivity analysis, validation→test shift check.
+
+### 3. ML-in-production concerns
+- **Train/serve parity**: the EdgeSimPy policy builds its feature vector from live simulation
+  state (`Task` + network topology). A parity audit found and fixed a **double-normalisation bug**
+  that made the deployed MLP predict Edge 100 % of the time — a classic serving skew. Parity tests
+  now assert `policy(task) == model(X)` on the full test set (0 mismatches for both models).
+- **Frozen, versioned artifacts**: `models/mlp_final_6.npz` (weights) + `.json` (config + scaler).
+- **Policy/execution separation**: models only decide `Edge | Cloud`; server selection and
+  execution are delegated to the simulator layer, so policies are swappable.
+
+---
+
+## Results
+
+### Predictive performance (held-out test set, n = 2,250)
+
+| Model | Accuracy [95 % CI] | Macro-F1 [95 % CI] | Balanced acc. | Recall Cloud |
+|---|---|---|---|---|
+| **MLP** | **0.817** [0.802, 0.833] | **0.803** [0.787, 0.820] | **0.800** | 0.730 |
+| WiSARD | 0.747 [0.729, 0.764] | 0.718 [0.698, 0.737] | 0.711 | 0.568 |
+| Majority (Edge) | 0.624 | 0.384 | 0.500 | 0.000 |
+
+![Confusion matrices](edgesimpy-simulation/results/figures/fig2_confusion_matrices_test_set.png)
+
+### System-level performance (EdgeSimPy, 10 independent workloads × 20 tasks)
+
+Edge: 12 GHz + 100 Mbps LAN · Cloud: 60 GHz + per-task WAN · tick = 0.1 s · 6 destination
+policies × 4 queue disciplines = 240 simulations.
+
+| Destination policy | Mean completion (s), SJF queue | Deadline violation, EDF_FEASIBLE queue |
+|---|---:|---:|
+| Always-Edge | 9.37 ± 4.43 | 59.0 % ± 8.1 % |
+| Always-Cloud | 8.81 ± 6.25 | **30.5 % ± 11.2 %** |
+| Random | 7.58 ± 5.21 | 42.5 % ± 10.1 % |
+| Analytical oracle | 6.69 ± 4.55 | 38.5 % ± 7.1 % |
+| **MLP** | **6.40 ± 5.09** | 36.0 % ± 12.0 % |
+| WiSARD | 6.75 ± 4.77 | 41.0 % ± 10.5 % |
+
+![Queue disciplines in the multi-workload study](edgesimpy-simulation/results/figures/fig4_queue_disciplines_multiworkload.png)
+
+**Takeaways**
+- The learned policies cut mean completion time substantially versus static and random baselines
+  and track the analytical oracle.
+- Accuracy is not the whole story: Always-Cloud has the *lowest* deadline-violation rate in this
+  scenario, because the oracle label optimises latency, not deadlines. This is reported as a
+  finding, not hidden — it motivates deadline-aware labels as future work.
+- Scheduling matters as much as placement: **SJF** reduces queueing time by 18–31 % for every
+  policy, and the proposed **`EDF_FEASIBLE`** discipline (EDF that demotes tasks whose deadline is
+  already infeasible) gives the lowest violation rate for all six destination policies.
+
+All numbers above come from versioned reports in
+[`edgesimpy-simulation/results/`](edgesimpy-simulation/results/).
+
+---
+
+## Repository layout
+
+```
+.
+├── Program.cs, Dataset/, DatasetGenerator/,      C# analytical simulator (.NET 10, no NuGet deps)
+│   Simulation/, Strategies/, Evaluation/,         ├─ synthetic dataset + latency model (labels)
+│   Reports/                                       └─ Random, FixedRule, Heuristic, WiSARD, MLP
+├── edgesimpy-simulation/                         Python validation layer
+│   ├── src/ml/                                    MLP, WiSARD, preprocessing, metrics, dataset contract
+│   ├── src/policies/                              ML offloading policies + placement baselines
+│   ├── src/execution/, src/integration/           Task queue/scheduler (FIFO/SJF/EDF/LLF/EDF_FEASIBLE),
+│   │                                              network flows, Cloud executor, EdgeSimPy wiring
+│   ├── src/experimento_*.py                       reproducible experiments (one script per study)
+│   ├── src/test_*.py                              parity / scheduler / network tests
+│   ├── models/                                    frozen MLP artifact
+│   └── results/                                   reports (.md/.json) and figures
+├── notebooks/analise_exploratoria.ipynb          exploratory data analysis
+└── docs/                                         design notes, phase history, thesis (docs/tcc/)
 ```
 
-**Arquivos gerados:**
-- `Dataset/dataset.csv` - dataset completo
-- `Dataset/train.csv` - conjunto de treinamento
-- `Dataset/test.csv` - conjunto de teste
-- `Charts/*.png` - gráficos de resultados
-- `Reports/final-report.md` - relatório automático
+---
 
-### Python/EdgeSimPy
+## Quick start
 
-Navegue para o diretório `edgesimpy-simulation` e use o ambiente virtual:
+**Requirements:** .NET 10 SDK, Python 3.12.
+
+### C# analytical simulator (dataset + baseline policies)
+
+```bash
+dotnet run --project EdgeCloudOffloadingTcc.csproj          # 15,000 samples (default)
+dotnet run --project EdgeCloudOffloadingTcc.csproj 20000    # custom size
+```
+Produces `Dataset/*.csv`, `Charts/*.png` and `Reports/final-report.md`.
+
+### Python / EdgeSimPy layer
 
 ```bash
 cd edgesimpy-simulation
-.venv\Scripts\python.exe src\diagnostico_primeiro_experimento.py
-.venv\Scripts\python.exe src\comparar_politicas_isoladas.py
+python -m venv .venv
+.venv\Scripts\pip install -r requirements.txt               # pins EdgeSimPy 1.1.0 by commit
+
+# Tests (standalone scripts, run from edgesimpy-simulation/)
+.venv\Scripts\python.exe src\test_ml_models.py
+.venv\Scripts\python.exe src\test_mlp_policy_parity.py
+.venv\Scripts\python.exe src\test_wisard_policy_parity.py
+.venv\Scripts\python.exe src\test_queue_policies.py
+
+# Key experiments
+.venv\Scripts\python.exe src\experimento_tuning_wisard.py           # WiSARD hyperparameter search
+.venv\Scripts\python.exe src\experimento_avaliacao_test_set.py      # final test-set evaluation
+.venv\Scripts\python.exe src\experimento_multi_workload_sistemico.py # 240-simulation system study
+.venv\Scripts\python.exe src\gerar_figuras_tcc.py                   # regenerate figures
 ```
 
-**Scripts disponíveis:**
-- `src/diagnostico_primeiro_experimento.py` - teste básico do Simulator
-- `src/diagnostico_infraestrutura.py` - auditoria da infraestrutura
-- `src/diagnostico_distancia_users_edges.py` - análise de latência de rede
-- `src/diagnostico_latency_aware.py` - política LatencyAwarePlacement
-- `src/diagnostico_resource_aware.py` - política ResourceAwarePlacement
-- `src/diagnostico_task_scheduler.py` - validação do TaskScheduler
-- `src/test_task_scheduler.py` - testes obrigatórios A-E do TaskScheduler
+Seeds are fixed throughout (dataset 42, split 43, MLP 11, WiSARD mapping 7, bootstrap 2026, workloads
+`20261001..20261010`). Units are explicit: the C# layer uses milliseconds, the Python layer
+seconds (`deadline_time_s = creation_time_s + deadline_ms / 1000`).
 
-## Estratégias implementadas
+---
 
-### Lado C# (Offloading)
-- **Random Decision** - baseline aleatório
-- **Fixed Rule** - regra baseada em limiar de CPU
-- **Simple Heuristic** - heurística ponderada com múltiplas variáveis
-- **WiSARD** - rede neural sem peso implementada didaticamente
-- **MLP** - perceptron multicamadas em C# puro
+## Limitations (stated, not hidden)
 
-### Lado Python (Placement)
-- **FirstFit** - baseline determinístico
-- **LatencyAwarePlacement** - escolhe menor delay que atenda SLA
-- **ResourceAwarePlacement** - desempata por delay, CPU, RAM, ID
+- Labels come from an analytical formula; agreement with it reproduces that formula and is not
+  proof of physical optimality — which is exactly why stage (C) exists.
+- Workloads are synthetic and all tasks arrive at `t = 0`; the Cloud is modelled as a single
+  logical node.
+- The C# layer's own evaluation (`Reports/`) is preliminary: its 12-feature vector includes
+  simulator state used to compute the label (feature leakage). The definitive results are the
+  EdgeSimPy ones above.
 
-## Status do EdgeSimPy (Fases concluídas)
+## Further reading
 
-### ✅ Fases 0-5 concluídas (28/08/2026)
-- **Fase 0:** Ambiente e instalação do EdgeSimPy 1.1.0
-- **Fase 1:** Dataset oficial e infraestrutura
-- **Fase 2:** Ciclo do Simulator e scheduler
-- **Fase 3:** Políticas de placement (FirstFit, LatencyAware, ResourceAware)
-- **Fase 4:** Auditoria de provisionamento
-- **Fase 5:** Modelo temporal de Tasks (Task, TaskStatus, TaskExecutor, TaskQueue, TaskScheduler)
+- [`docs/tcc/ARTIGO_TCC_COMPLETO.md`](docs/tcc/ARTIGO_TCC_COMPLETO.md) — full thesis article (PT-BR)
+- [`docs/tcc/GUIA_DIDATICO_TCC.md`](docs/tcc/GUIA_DIDATICO_TCC.md) — didactic guide to every concept used (PT-BR)
+- [`docs/HISTORICO_EVOLUCAO_EDGESIMPY_TCC.md`](docs/HISTORICO_EVOLUCAO_EDGESIMPY_TCC.md) — detailed log of all 25 development phases and decisions
+- [`docs/EDGE_SIM_PY_PHASES.md`](docs/EDGE_SIM_PY_PHASES.md) — phase summary
+- [`edgesimpy-simulation/results/PARITY_AUDIT_REPORT.md`](edgesimpy-simulation/results/PARITY_AUDIT_REPORT.md) — train/serve parity audit
 
-### ✅ Fases 6-14 concluídas (até 08/09/2026)
-- **Fase 6:** TaskScheduler integrado ao ciclo temporal do EdgeSimPy
-- **NetworkFlow:** `TaskNetworkFlow` transmite dados da Task antes da execução
-- **Contrato de dados:** dataset C# de 6 features (`CpuCycles, TaskSizeMB, LatencySensitivity, RequiredMemoryMB, BandwidthMbps, NetworkLatencyMs`), splits reproduzíveis (70/15/15)
-- **Modelos ML em Python:** WiSARD, MLP, baseline Majority; `MLP_final_6` serializado (`models/mlp_final_6.npz/.json`)
-- **Política MLP no EdgeSimPy:** `MLPOffloadingPolicy` decide Edge/Cloud; seleção de servidor delegada a `NearestServerPolicy`; predições Cloud → `CLOUD_UNAVAILABLE` explícito (sem fallback)
-- **Avaliação comparativa sistêmica:** Random, Nearest, LeastLoaded, Hybrid e MLP em workloads de 1-8 tasks
+---
 
-### ✅ Fase 15-16 - Auditoria de paridade e correção (09/09/2026)
-- **Bug corrigido:** `MLPOffloadingPolicy` aplicava dupla normalização (normalizava antes de `predict()`, que já normaliza internamente) — causava 100% predições Edge. O modelo **não** tem bias Edge; a conclusão anterior foi retraida
-- **Correções de pipeline:** workload congelado usa os sample IDs exatos; a mesma Task (5 propriedades verificadas) vai da decisão à execução; `processing_rate=12 GHz` igual à capacidade Edge do modelo analítico C#; deadline real do dataset por amostra
-- **Teste de invariância:** `src/test_mlp_policy_parity.py` valida modelo salvo vs memória, preprocessing, outputs contínuos e identidade Task decisão↔execução
-- **Features WAN corrigidas:** `BandwidthMbps`/`NetworkLatencyMs` são condições WAN user→Cloud por-task no contrato C# (só afetam o custo Cloud) — a `Task` agora carrega esses valores do cenário; o cálculo topológico virou fallback documentado. Paridade exata 20/20 no teste de invariância
-- **Workload 50/50 corrigido:** 10 Edge / 10 Cloud labels → 11 Edge / 9 Cloud preditos; accuracy 0.850 (consistente com 81.7% do artefato no test set canônico); 9 `CLOUD_UNAVAILABLE`; 11 tasks executadas
-- Relatório completo: `edgesimpy-simulation/results/PARITY_AUDIT_REPORT.md`
+### Resumo (PT-BR)
 
-### ✅ Fase 17 - WiSARD integrado ao pipeline (12/10/2026)
-- **`WiSARDOffloadingPolicy`:** mesmo contrato da política MLP — extrai as 6 features da Task (extração compartilhada, fonte única) e decide Edge/Cloud; predições Cloud → `CLOUD_UNAVAILABLE`
-- **Contrato:** treinado em `dataset.train` na sessão (sem artefato serializado), sobre as **6 features** — não é port do WiSARD C# de 12 features, que usa estado de servidores sem equivalente no EdgeSimPy
-- **Paridade:** `src/test_wisard_policy_parity.py` — 20/20 exata em predições **e** scores dos discriminadores; determinismo, encoder e contrato de decisão verificados
-- **Workload 50/50 congelado:** WiSARD prediz 20 Edge / 0 Cloud (accuracy 0.500) vs MLP 11/9 (accuracy 0.850) — mesmas amostras, mesmo pipeline
-- **Achado:** WiSARD sub-capacitado no contrato de 6 features (24 bits → apenas 3 RAMs por discriminador; saturação + desempate pró-Edge em 78-87% das amostras; validation acc 62.8% ≈ baseline maioria). Limitação do modelo, não do pipeline — tuning fora do escopo desta etapa
-- **Uso:** `python src/experimento_mlp_workload_representativo.py [mlp|wisard]`
+TCC que compara políticas de decisão de *task offloading* Edge/Cloud. Uma MLP e uma rede neural
+sem peso (WiSARD), implementadas do zero, são treinadas sobre um contrato de 6 features causais
+e avaliadas em dois níveis: preditivo (test set isolado, IC95 % por bootstrap, McNemar) e
+sistêmico (simulação de eventos discretos no EdgeSimPy com filas, rede e deadlines). A MLP
+atinge 0,817 de acurácia e reduz o tempo médio de conclusão em ~32 % frente a "sempre Edge".
+Documentação completa do TCC em [`docs/tcc/`](docs/tcc/).
 
-### ✅ Fase 18 - Estudo controlado de hiperparâmetros do WiSARD (12/10/2026)
-- **Protocolo:** seleção **só no validation** por **macro-F1** (accuracy premia o colapso para a maioria com prior 62/38); 5 seeds por configuração, média ± sd; test set intocado. Grid 72 configs: encoding {binary, thermometer} × bits × address × bleaching
-- **Causa do colapso:** empates (78–87% das amostras) resolvidos pró-Edge. **Bleaching** é o fator dominante (+0,23 macro-F1); só adicioná-lo à config C# já dá 0,720. Termômetro e `addr=16` ajudam modestamente; resolução em bits é irrelevante
-- **`WISARD_FINAL_6`** (thermometer / 64 bits / addr 16 / bleaching, 24 RAMs): validation macro-F1 **0,738 ± 0,009**, accuracy 0,768 (vs 0,395 / 0,627 da config C#-equivalente). Platô estatístico com 8–32 bits documentado. Ainda abaixo do MLP (0,799)
-- **Workload 50/50 congelado:** WiSARD 20/0 → **12 Edge / 8 Cloud, accuracy 0,800** (CM [[9,1],[3,7]]) vs MLP 0,850
-- **Engenharia:** RAMs como contagens vetorizadas (bit-a-bit equivalente ao modelo anterior nos defaults); `scores()` público; paridade 20/20 mantida
-- Relatórios: `edgesimpy-simulation/results/wisard_tuning.{md,json}`, `wisard_representative_workload.{md,json}`; script `src/experimento_tuning_wisard.py`
+## License
 
-### ✅ Fase 19 - Avaliação final no test set + correção do split (13/10/2026)
-- **Bug crítico corrigido:** o split train/val/test dependia da ordem de iteração de um `frozenset` (`PYTHONHASHSEED`) — existiam **duas instâncias do split**, sorteadas por processo. O "83,2% no test set" histórico era de um modelo treinado no *outro* split; o artefato `mlp_final_6` vale **81,7%** no test do seu split. Correção: `sorted(VALID_LABELS)`; teste de regressão com fingerprint do split validado sob vários `PYTHONHASHSEED`
-- **Avaliação única no test set (n=2250)**, IC 95% bootstrap, McNemar pareado, paridade nas 2250 amostras:
-
-  | Modelo | accuracy [IC95] | macro-F1 [IC95] | recall Cloud |
-  |---|---|---|---:|
-  | MLP_final_6 | **0,817** [0,802; 0,833] | **0,803** [0,787; 0,820] | 0,730 |
-  | WISARD_FINAL_6 | 0,747 [0,729; 0,764] | 0,718 [0,698; 0,737] | 0,568 |
-  | Majority | 0,624 | 0,384 | 0,000 |
-
-- MLP > WiSARD com p = 4e-15 (284 vs 126 discordantes); sem otimismo de seleção no MLP; WiSARD seed 7 mostra −0,027 de otimismo de *seed* (configuração generaliza: 0,729 médio no test)
-- **Paridade fechada no test inteiro:** 0 divergências `policy(Task)` vs `model(X_raw)` para ambos
-- Script `src/experimento_avaliacao_test_set.py`; relatórios `results/final_test_evaluation.{md,json}`. **O test set agora está usado** — nova seleção de modelo exigiria novo split
-
-### ✅ Fase 20 - Unidades de rede coerentes (13/10/2026)
-- Convenção **nativa do EdgeSimPy**: `data_to_transfer` em MB (`ContainerLayer.size` é em MB), `link.bandwidth` em MB/tick → link do tutorial 12.5 = 100 Mbps com tick = 1 s. Removido o `×1024` que inflava transmissões 1024× (completion ~4800 s → ~8 s; fila passa a ser observável)
-
-### ✅ Fase 21 - Cloud lógico com WAN por-Task, opção B (13/10/2026)
-- **Decisão conjunta** entre 4 alternativas; B preserva a coerência decisão/execução (mesmos atributos da Task) e declara a circularidade parcial do termo de rede
-- **`CloudExecutor`** (`src/integration/cloud_executor.py`): destino lógico fora do grafo; upload = `MB×8/task.bandwidth_mbps`, propagação = `task.network_latency_ms`; chegada quantizada ao tick; FIFO + 60 GHz (`CloudCapacityCyclesPerMs`) via `TaskScheduler`; sem WAN → erro (sem fallback). Testes em `src/test_cloud_executor.py`
-- **Workload congelado 100% executável** (Edge e Cloud no mesmo relógio): MLP 20/20 (11 E + 9 C), WiSARD 20/20 (12 E + 8 C). Cloud: upload médio 0,07 s vs Edge 4–5 s (100 Mbps compartilhados)
-- **Achado dominante:** tick de 1 s vs execuções de 0,02–0,5 s e deadlines de 0,3–5,9 s — cada task em fila custa ≥ 1 s; a maioria das violações (75–80%) é artefato da resolução temporal, igual para ambos os destinos. Reduzir o tick exige reescalar bandwidth dos links (pendente)
-
-### ✅ Fase 22 - Comparativo de destinos no workload congelado (13/10/2026)
-- `src/experimento_comparativo_destinos.py`: 6 políticas de destino (AlwaysEdge, AlwaysCloud, RandomDestination ×5 seeds, Oracle, MLP, WiSARD) no mesmo workload congelado, seleção de servidor Edge idêntica — só o destino Edge/Cloud difere. Resultados: `results/comparativo_destinos_workload.{md,json}`
-- **MLP (7,25 s / 80% viol.) e WiSARD (7,40 s / 75%) ≈ Oracle (7,80 s / 90%)** no nível sistêmico; baselines piores: AlwaysEdge 11,60 s, AlwaysCloud 13,75 s (fila Cloud serializada), Random 8,52 s. Leitura honesta: equivalência sistêmica com o oráculo analítico, não superioridade (n=20, tick de 1 s)
-
-### ✅ Fase 23 - Resolução temporal sub-segundo (`tick = 0,1 s`), políticas de fila (`FIFO`, `SJF`, `EDF`, `LLF`) e estudo fatorial (14/10/2026)
-- **Passo A (`configure_simulator_tick_resolution`)**: `tick_duration_s = 0.1 s` reescalando links para `1,25 MB/tick` (preserva vazão física `12,5 MB/s = 100 Mbps` e invariância de features). Sob `FIFO`, o tempo médio de conclusão do `MLP` cai de `7,25 s → 3,23 s` (Cloud: `6,00 s → 0,79 s`) e a violação de deadline de `80% → 40%` (Cloud: `78% → 22%`)
-- **Passo B (`TaskQueue` / `TaskScheduler` / `CloudExecutor`)**: suporte a `fifo` (default), `sjf` (menor `cpu_cycles`), `edf` (menor `deadline_time_s`, utilizando no escalonador local o `DeadlineMs` excluído das 6 features do ML) e `llf` (menor folga dinâmica). Testes em `src/test_queue_policies.py`
-- **Passo C (`src/experimento_filas_e_ticks.py`)**: estudo fatorial `2 ticks × 4 disciplinas × 6 políticas` (`results/experimento_filas_e_ticks.{md,json}`). Em `tick = 0,1 s`, **SJF** reduz o tempo médio de fila em **21–36%** para todas as políticas (`MLP + SJF`: completion `3,145 s`), enquanto **EDF/LLF** reduzem a taxa de violação de deadline em **-10 pp** nas políticas com Cloud (`MLP + EDF/LLF`: **30%** de violação vs 40% em FIFO)
-
-### ✅ Fase 24 - `EDF_FEASIBLE` (mitigação de "tasks zumbis") e Avaliação Sistêmica Multi-Workload (`10 × 20 = 200 tasks`, 14/10/2026)
-- **`edf_feasible` (`TaskQueue`)**: verifica se a tarefa ainda pode cumprir seu deadline (`current_time_s + exec <= deadline_time_s`); tarefas viáveis competem por EDF, enquanto tarefas com deadline já expirado no upload ("tasks zumbis") são rebaixadas para o fim da fila e atendidas via SJF. Em `AlwaysEdge` (`tick = 0,1 s`), derruba as violações de `65%` (EDF cego) / `60%` (FIFO) para **`50%`**
-- **Avaliação Multi-Workload (`src/experimento_multi_workload_sistemico.py`)**: `10 workloads 50/50 independentes × 20 tasks = 200 tasks` (`tick = 0,1 s`), `6 políticas × 4 disciplinas de fila = 240 simulações` (`results/experimento_multi_workload_sistemico.{md,json}`). **MLP (`6,40 ± 5,09 s`) e WiSARD (`6,75 ± 4,77 s`)** igualam o `Oracle` (`6,69 ± 4,55 s`) e reduzem o tempo médio de conclusão em **~32% vs `AlwaysEdge` (`9,59 s`)** e **~27% vs `AlwaysCloud` (`8,87 s`)**. **`SJF`** reduz a fila em **18–31%** em todas as políticas, e **`EDF_FEASIBLE`** atinge a menor taxa de violação em **todas as 6 políticas de destino** (`MLP + EDF_FEASIBLE`: **36,0% ± 12,0%** vs 41,0% em FIFO)
-
-### ✅ Fase 25 - Figuras finais e consolidação do artigo do TCC (16/10/2026)
-- **`src/gerar_figuras_tcc.py`**: 4 figuras PNG em `results/figures/` — métricas preditivas no test set com IC95% e McNemar; matrizes de confusão MLP/WiSARD; efeito do tick `1,0 s → 0,1 s`; disciplinas de fila no estudo multi-workload (`FIFO`/`SJF`/`EDF`/`EDF_FEASIBLE`)
-- **`ARTIGO_TCC_COMPLETO.md` consolidado**: o artigo agora cobre as duas camadas — nova seção 5.6 (camada EdgeSimPy: contrato de 6 features, ciclo de vida da Task, Cloud lógico, tick, disciplinas de fila, auditoria de paridade e desenho experimental) e novas seções 7.5–7.11 (transição limitações→validação, test set canônico, comparativo de destinos, efeito do tick, fatorial destino × fila com "tasks zumbis" e `EDF_FEASIBLE`, estudo multi-workload `200 tasks` com decomposição Edge/Cloud, figuras). Em 20/10/2026 os resultados foram reenquadrados: §7.1–7.4 passam a ser apresentados como *avaliação preliminar no mundo analítico fechado* (com nota de vazamento de features de estado) e §7.5–7.11 como a avaliação definitiva. Referências ampliadas com EdgeSimPy (FGCS 2023), Liu & Layland 1973 e Silberschatz
-- **`GUIA_DIDATICO_TCC.md`**: nota de escopo + nova seção 15 explicando a camada EdgeSimPy em linguagem didática (pipeline de 3 níveis, descobertas, reprodução, próximos passos)
-
-### ⏳ Fases futuras (opcionais)
-- Mobilidade e experimentos de estresse / balanceamento multi-servidor na borda (`LeastLoaded` / `Hybrid`)
-- Chegadas de tasks distribuídas no tempo (hoje todas em `t = 0`), admissão/descarte de tasks inviáveis e Cloud multi-servidor
-
-## Documentação técnica
-
-### Contexto geral
-- [AI_CONTEXT.md](docs/AI_CONTEXT.md) - pacote de contexto para IA
-- [CONTEXTO_MESTRE_EDGESIMPY_TCC.md](docs/CONTEXTO_MESTRE_EDGESIMPY_TCC.md) - contexto de continuidade
-- [EDGE_SIM_PY_PHASES.md](docs/EDGE_SIM_PY_PHASES.md) - lista resumida de fases
-
-### Histórico e detalhes
-- [HISTORICO_EVOLUCAO_EDGESIMPY_TCC.md](docs/HISTORICO_EVOLUCAO_EDGESIMPY_TCC.md) - log detalhado de experimentos
-- [APRESENTACAO_ORIENTADOR_EDGESIMPY.md](docs/APRESENTACAO_ORIENTADOR_EDGESIMPY.md) - roteiro de apresentação
-
-### Guias didáticos
-- [GUIA_DIDATICO_TCC.md](GUIA_DIDATICO_TCC.md) - guia completo do projeto
-- [ARTIGO_TCC_COMPLETO.md](ARTIGO_TCC_COMPLETO.md) - artigo completo do TCC
-
-## Observações importantes
-
-### Reprodutibilidade
-- O projeto C# evita dependências externas (NuGet) para facilitar execução em ambientes sem restore de pacotes
-- Experimentos EdgeSimPy são isolados em processos separados para evitar estado global compartilhado
-- Seeds e parâmetros são documentados para reprodutibilidade
-
-### Separação metodológica
-- O simulador C# gera rótulos analíticos que podem sofrer de circularidade se usados para avaliação
-- O EdgeSimPy serve como camada de validação independente para quebrar essa circularidade
-- O modelo de Task é mantido independente do EdgeSimPy até decisão explícita de integração
-
-### Cuidados com unidades
-- Lado C#: milissegundos para deadline, MB para tamanho
-- Lado Python: segundos para tempo (igual ao `tick_unit="seconds"` do EdgeSimPy)
-- Conversão explícita: `deadline_time_s = creation_time_s + deadline_ms / 1000`
-
-## Próximos passos recomendados
-
-1. Revisão final do `ARTIGO_TCC_COMPLETO.md` (nomes, orientador, normas da banca, inserção das figuras de `edgesimpy-simulation/results/figures/` e `Charts/` no documento final)
-2. (Opcional) Explorar balanceamento entre múltiplos servidores Edge (`Nearest` vs `LeastLoaded` vs `Hybrid`) combinado às decisões do `MLP`/`WiSARD`
-
-## Ambiente de desenvolvimento
-
-### Requisitos
-- .NET 10 SDK
-- Python 3.x
-- EdgeSimPy 1.1.0 (commit 76eb5ead74596bb4240759fa4336f1d6f190c70a)
-- NetworkX (dependência do EdgeSimPy)
-
-### Validação
-- C#: `dotnet build EdgeCloudOffloadingTcc.csproj`
-- EdgeSimPy: `edgesimpy-simulation\.venv\Scripts\python.exe edgesimpy-simulation\src\diagnostico_primeiro_experimento.py`
+See [LICENSE](LICENSE).
